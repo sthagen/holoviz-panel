@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<!-- Basic Page Needs
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+<meta charset="utf-8"/>
+<title>FAQ — Panel 0.6.0 documentation</title>
+<meta content="High-level dashboarding for python visualization libraries" name="description"/>
+<meta content="Panel contributors" name="author"/>
+<!-- Mobile Specific Metas
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<!-- FONT
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+<script src="https://ajax.googleapis.com/ajax/libs/webfont/1.6.16/webfont.js"></script>
+<script>
+    WebFont.load({
+      google: {
+        families: ['Source Sans Pro']
+      }
+    });
+  </script>
+<!-- CSS
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+<link href="_static/site.css" rel="stylesheet"/>
+<link href="_static/nbsite.css" rel="stylesheet"/>
+<!-- Scripts
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+<script async="" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_CHTML" type="text/javascript">
+</script>
+<script src="_static/js/main.js"></script>
+<script src="_static/nbsite.js"></script>
+<script src="_static/require.js"></script>
+<!-- Favicon
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+<link href="_static/favicon.ico" rel="icon" type="image/png"/>
+<!-- Canonical
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+<link href="https://panel.pyviz.org/FAQ.html" rel="canonical">
+</link></head>
+<body class="">
+<header class="navigation">
+<div class="wrapper">
+<a class="logo" href="index.html">
+<img alt="Logo" src="_static/logo_horizontal.png"/>
+</a>
+<a class="navigation-menu-button" href="javascript:void(0)" id="js-mobile-menu">Menu</a>
+<nav>
+<ul class="navigation-menu show" id="js-navigation-menu">
+<li class="nav-link doc-head"><a href="//gitter.im/pyviz/pyviz">Gitter</a></li>
+<li class="nav-link doc-head"><a href="//github.com/pyviz/panel">Github</a></li>
+<li class="nav-link">
+<div style="display:inline-block;vertical-align: middle;">
+<div class="search-bar">
+<form action="search.html" method="get" role="search">
+<input name="q" placeholder="Search" type="search"/>
+<button type="submit">
+<img alt="Search Icon" src="https://raw.githubusercontent.com/thoughtbot/refills/master/source/images/search-icon-black.png"/>
+</button>
+</form>
+</div>
+</div>
+</li>
+</ul>
+</nav>
+</div>
+</header>
+<div class="second-nav">
+<nav>
+<ul class="navigation-menu show">
+<li class="nav-link doc-head"><a href="getting_started/index.html">Getting started</a></li>
+<li class="nav-link doc-head"><a href="user_guide/index.html">User Guide</a></li>
+<li class="nav-link doc-head"><a href="gallery/index.html">Gallery</a></li>
+<li class="nav-link doc-head"><a href="reference/index.html">Reference Gallery</a></li>
+<li class="nav-link doc-head"><a href="developer_guide/index.html">Developer Guide</a></li>
+<li class="nav-link doc-head"><a href="#">FAQ</a></li>
+<li class="nav-link doc-head"><a href="about.html">About</a></li>
+</ul>
+</nav>
+</div>
+<!-- MAIN BODY OF DOCS –––––––––––––––––– -->
+<div class="docs section">
+<div id="hacketyhackhack"> <!-- style="width:20%;margin-right: 100px;"> --> <!--style="display: none;"> style="display:none;"> -->
+<div class="toc" style="width:15%; margin-right:20px;">
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="index.html">Home</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started/index.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide/index.html">User Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gallery/index.html">Gallery</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reference/index.html">Reference Gallery</a></li>
+<li class="toctree-l1"><a class="reference internal" href="developer_guide/index.html">Developer Guide</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">FAQ</a></li>
+<li class="toctree-l1"><a class="reference external" href="http://github.com/pyviz/panel">Github source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="about.html">About</a></li>
+</ul>
+</div>
+</div>
+<div class="content"> <!-- style="max-width:80%;margin-left:auto;margin-right: auto;">-->
+<div class="section" id="faq">
+<h1>FAQ<a class="headerlink" href="#faq" title="Permalink to this headline">¶</a></h1>
+<p>Here is a list of questions we have either been asked by users or
+potential pitfalls we hope to help users avoid:</p>
+<p><strong>Q: What libraries are supported?</strong></p>
+<p><strong>A:</strong>  We are currently keeping the list at <a class="reference external" href="https://github.com/pyviz/panel/issues/2">https://github.com/pyviz/panel/issues/2</a>, but hope to move that into the real docs soon.</p>
+<p><strong>Q: Does it matter which plotting library I use with Panel?</strong></p>
+<p><strong>A:</strong> Some libraries provide deeply interactive objects (e.g. Bokeh and Plotly), and so if you want the user to interact with individual subelements of a plot, you should use one of those libraries. Otherwise, just use any supported library that you prefer!</p>
+<p><strong>Q: How do I add support for a library or datatype not yet supported?</strong></p>
+<p><strong>A:</strong> It depends. If the object already has one of the usual IPython <code class="docutils literal notranslate"><span class="pre">_repr_X_</span></code> rich display methods (where X is png, jpg, or html), then it is very likely to work already. Try it!  If it doesn’t have a rich display method, check to see if you can add one as a PR to that project – they are very useful for many cases other than Panel, too. Otherwise, adding support is quite easy for anything that can somehow return an image or some HTML. If it can return an image in any way, see the <code class="docutils literal notranslate"><span class="pre">panel.pane.Matplotlib</span></code> implementation as a starting point; you just need to be able to call some method or function that returns an image, and the rest should be simple.</p>
+<p>If you want an even richer JavaScript-based representation, it will be more difficult to add that, but you can see the <code class="docutils literal notranslate"><span class="pre">pane.Bokeh</span></code> class and the <code class="docutils literal notranslate"><span class="pre">panel.holoviews</span></code> and <code class="docutils literal notranslate"><span class="pre">panel.plotly</span></code> modules for examples.</p>
+<p><strong>Q: How does Panel relate to Bokeh?</strong></p>
+<p><strong>A:</strong> Panel is built on infrastructure provided by Bokeh, specifically Bokeh’s  model base classes, layouts, widgets, and server. But Panel does not require using any of Bokeh’s plotting support. This way you can make use of a solid, well supported low-level toolkit (Bokeh) to build apps and dashboards for your own plots from any supported library.</p>
+<p>Conversely, what Panel adds on top of Bokeh is full bidirectional communication between Python and JavaScript both in a Jupyter session (classic notebook or Jupyter Lab) and in a standalone Bokeh server, making it trivial to move code between Jupyter and server contexts. It then uses this two-way “comms” support to provide reactive widgets, containers, and views that make it simple to put together widget-controlled objects accessible from either Python or JavaScript. Finally, Panel adds a large set of wrappers for common plot and image types so that they can easily be laid out into small apps or full dashboards.</p>
+<p><strong>Q: Why do I get an error “Javascript error adding output! TypeError: Cannot read property ‘comm_manager’ of undefined”?</strong></p>
+<p><strong>A:</strong> This error usually means that you forgot to run panel.extension() in a notebook context to set up the code for communicating between JavaScript and Python.  It’s easy to get confused and think you don’t need that line, because notebooks will often work fine as long as <em>some</em> notebook somewhere in your Jupyter session has run the command, but the only reliable way to make the communication channels available is to make sure <em>every</em> notebook includes this command.</p>
+<p><strong>Q: Why is my object being shown using the wrong type of pane?</strong></p>
+<p><strong>A:</strong> A global set of precedence values is used to ensure that the richest representation of a given object is chosen when you pass it to a Row or Column. However, you are also welcome to instantiate a specific Pane type explicitly, as in <code class="docutils literal notranslate"><span class="pre">pn.Row(pane.HTML(obj,</span> <span class="pre">height=300))</span></code>.  If the default Pane type is fine but you still want to be able to pass specific options like width or height in this way, you can use the pn.panel function explicitly, as in  <code class="docutils literal notranslate"><span class="pre">pn.Row(pn.panel(obj,</span> <span class="pre">height=300))</span></code>.</p>
+<p><strong>Q: For Matplotlib plots in a notebook, why do I get no plot, two plots, or plots that fail to update?</strong></p>
+<dl class="docutils">
+<dt><strong>A:</strong> Matplotlib behaves a bit strangely in notebooks. Normal Python objects like Python literals and containers display when they are returned as a cell’s value, but Matplotlib figures have a textual representation by default but then (depending on the Matplotlib backend) also display like print statements, i.e. with a plot as a side effect rather than as a representation of the return value. To force predictable Panel-compatible behavior,</dt>
+<dd><ol class="first last arabic simple">
+<li>Ensure that your callback returns a figure object, not relying on side effects.</li>
+<li><dl class="first docutils">
+<dt>Either avoid calling <cite>%matplotlib inline</cite>, or else ensure that each figure you create is closed before you return it in a callback (so that Matplotlib inline won’t try to display it itself). E.g.:</dt>
+<dd><ul class="first last">
+<li>fig = df.plot().get_figure()</li>
+<li>plt.close(fig)</li>
+<li>return fig</li>
+</ul>
+</dd>
+</dl>
+</li>
+<li>You may need to force Matplotlib to choose off-screen rendering as images by starting your code with <a href="#id1"><span class="problematic" id="id2">``</span></a>import matplotlib as mpl ; mpl.use(‘Agg’)`</li>
+</ol>
+</dd>
+</dl>
+<p><strong>Q: How does Panel relate to other widget/app/dashboard tools?</strong></p>
+<p><strong>A:</strong> Panel is currently the only Python tool that fully supports writing live widget and app code in Jupyter Notebooks and then deploying it on standalone web servers. Panel is thus unique in supporting the entire life cycle of working with data: from initial exploration, to adding custom interactivity to make one-off analyses easier, to building a complex dashboard from multiple components, to deploying your polished Python-backed dashboard in a public-facing or on-premises private server, and then iterating by bringing those same components back to the notebook for further exploration and improvement. Other tools support <em>some</em> of the same capabilities, but by focusing on only one part of this life cycle they require you to start over when you need to use your work in a different way.</p>
+<p>For instance, ipywidgets provide many of the same capabilities as Panel, but they are tightly tied to the Jupyter environment, and are not generally able to be used in a secure standalone server. Dash can develop polished dashboards, but it is not designed for supporting initial exploration in a notebook, and is largely focused on Plotly charts rather than the visualization libraries that you are already using. The components of Dash apps or ipywidgets apps are also tightly tied to that particular delivery mechanism, while Panel also supports developing your domain-specific code in a general way independent of notebooks or apps, separating your content from the details of its presentation. Here’s a general overview of what each library supports:</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="28%"/>
+<col width="12%"/>
+<col width="16%"/>
+<col width="12%"/>
+<col width="14%"/>
+<col width="17%"/>
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head"> </th>
+<th class="head">Panel</th>
+<th class="head">ipywidgets</th>
+<th class="head">Bokeh</th>
+<th class="head">Shiny</th>
+<th class="head">Dash (Plotly)</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>Provides widgets and layouts</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr class="row-odd"><td>Supports interactive plots</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr class="row-even"><td>Reactive updates in Jupyter notebooks</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Partial (*)</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr class="row-odd"><td>Deployable in a server</td>
+<td>Yes</td>
+<td>No</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr class="row-even"><td>Fully usable in Jupyter</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Partial (*)</td>
+<td>No</td>
+<td>No, only via iframe</td>
+</tr>
+<tr class="row-odd"><td>Supports Matplotlib plots</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr class="row-even"><td>Supports Bokeh plots</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr class="row-odd"><td>Supports Plotly plots</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr class="row-even"><td>Supports R ggplot plots</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr class="row-odd"><td>Supports Altair/Vega plots</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr class="row-even"><td>Separates content from presentation</td>
+<td>Yes</td>
+<td>Could eventually
+using traitlets</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr class="row-odd"><td>Servable from public site</td>
+<td>Yes; mybinder
+Heroku, etc.</td>
+<td>As live notebooks
+via mybinder</td>
+<td>Yes; mybinder,
+Heroku, etc.</td>
+<td>Yes, shinyapps.io</td>
+<td>Yes, Plotly Cloud</td>
+</tr>
+<tr class="row-even"><td rowspan="2">Servable within private enterprise
+network</td>
+<td rowspan="2">Yes, AE5</td>
+<td rowspan="2">Yes, AE5 (with
+readonly code cells)</td>
+<td rowspan="2">Yes, AE5</td>
+<td rowspan="2">Yes, AE5 or Shiny
+Server</td>
+<td rowspan="2">Yes, AE5 or Plotly
+Enterprise</td>
+</tr>
+<tr class="row-odd"></tr>
+</tbody>
+</table>
+<p>* - Bokeh can use live reactive widgets in Jupyter notebooks by launching an embedded server process or using ipywidgets/push_notebook</p>
+<p>Each of these libraries are free, open-source software packages, but they can be used with the commercial products
+<a class="reference external" href="https://www.anaconda.com/enterprise/">Anaconda Enterprise (AE5)</a>,
+<a class="reference external" href="https://www.rstudio.com/products/shiny-server-pro">Shiny Server</a>, or
+<a class="reference external" href="https://plot.ly/products/on-premise">Plotly Enterprise</a> to provide on-premises authenticated deployment services within a private network.</p>
+</div>
+</div>
+</div>
+<!-- END MAIN BODY OF DOCS ––––––––––––– -->
+<footer class="footer">
+<div class="footer-links">
+<ul>
+<li><span class="footer-title">Links</span></li>
+<li><a href="getting_started/index.html">Getting started</a></li>
+<li><a href="user_guide/index.html">User Guide</a></li>
+<li><a href="gallery/index.html">Gallery</a></li>
+<li><a href="reference/index.html">Reference Gallery</a></li>
+<li><a href="developer_guide/index.html">Developer Guide</a></li>
+<li><a href="#">FAQ</a></li>
+<li><a href="about.html">About</a></li>
+</ul>
+<ul>
+<li><span class="footer-title">Join Us</span></li>
+<li><a href="//gitter.im/pyviz/pyviz">Gitter</a></li>
+<li><a href="//github.com/pyviz/panel">Github</a></li>
+</ul>
+<ul class="copyright">
+<li>2019 Panel contributors</li>
+</ul>
+</div>
+</footer>
+<!-- Google Analytics -->
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-61554933-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+<!-- MathJax Config -->
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+  tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}
+});
+</script>
+<!-- End Document
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+</body>
+</html>
