@@ -300,6 +300,10 @@ class CrossSelector(CompositeWidget, MultiSelect):
        The number of options shown at once (note this is the
        only way to control the height of this widget)""")
 
+    definition_order = param.Integer(default=True, doc=""" Whether to
+       preserve definition order after filtering. Disable to allow the
+       order of selection to define the order of the selected list.""")
+
     def __init__(self, *args, **kwargs):
         super(CrossSelector, self).__init__(**kwargs)
         # Compute selected and unselected values
@@ -338,9 +342,9 @@ class CrossSelector(CompositeWidget, MultiSelect):
         self._search[True].param.watch(self._filter_options, 'value')
 
         # Define Layout
-        blacklist = Column(self._search[False], self._lists[False])
-        whitelist = Column(self._search[True], self._lists[True])
-        buttons = Column(self._buttons[True], self._buttons[False], width=50)
+        blacklist = Column(self._search[False], self._lists[False], **layout)
+        whitelist = Column(self._search[True], self._lists[True], **layout)
+        buttons = Column(self._buttons[True], self._buttons[False])
 
         self._composite = Row(blacklist, Column(VSpacer(), buttons, VSpacer()), whitelist,
                               css_classes=self.css_classes, margin=self.margin, **layout)
@@ -367,7 +371,7 @@ class CrossSelector(CompositeWidget, MultiSelect):
                 setattr(self._lists[True], event.name, width)
                 setattr(self._lists[False], event.name, width)
 
-        
+
     @param.depends('size', watch=True)
     def _update_size(self):
         self._lists[False].size = self.size
@@ -380,7 +384,7 @@ class CrossSelector(CompositeWidget, MultiSelect):
 
     @param.depends('value', watch=True)
     def _update_value(self):
-        labels, values = self.labels, self.values 
+        labels, values = self.labels, self.values
         selected = [labels[indexOf(v, values)] for v in self.value
                     if isIn(v, values)]
         unselected = [k for k in labels if k not in selected]
@@ -418,7 +422,10 @@ class CrossSelector(CompositeWidget, MultiSelect):
         query = self._query[selected]
         other = self._lists[not selected].labels
         labels = self.labels
-        options = [k for k in labels if k not in other]
+        if self.definition_order:
+            options = [k for k in labels if k not in other]
+        else:
+            options = self._lists[selected].values
         if not query:
             self._lists[selected].options = options
             self._lists[selected].value = []

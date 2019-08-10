@@ -36,7 +36,7 @@ def _build_models():
         build_custom_models()
     except ImportError as e:
         print("Custom model compilation failed with: %s" % e)
-    
+
 
 class CustomDevelopCommand(develop):
     """Custom installation for development mode."""
@@ -84,7 +84,7 @@ except:
 ########## dependencies ##########
 
 install_requires = [
-    'bokeh >=1.1.0',
+    'bokeh >=1.3.0',
     'param >=1.9.0',
     'pyviz_comms >=0.7.2',
     'markdown',
@@ -121,7 +121,7 @@ extras_require = {
     ],
     'recommended': _recommended,
     'doc': _recommended + [
-        'nbsite',
+        'nbsite >=0.6.1',
         'sphinx_ioam_theme',
         'sphinx <2',
         'selenium',

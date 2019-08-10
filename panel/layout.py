@@ -61,12 +61,19 @@ class Panel(Reactive):
         if self._rename['objects'] in msg:
             old = events['objects'].old
             msg[self._rename['objects']] = self._get_objects(model, old, doc, root, comm)
+
+        held = doc._hold
+        if comm is None and not held:
+            doc.hold()
         model.update(**msg)
 
         from .io import state
         ref = root.ref['id']
         if ref in state._views:
             state._views[ref][0]._preprocess(root)
+
+        if comm is None and not held:
+            doc.unhold()
 
     #----------------------------------------------------------------
     # Model API
@@ -88,14 +95,17 @@ class Panel(Reactive):
         for i, pane in enumerate(self.objects):
             pane = panel(pane)
             self.objects[i] = pane
+
+        for obj in old_objects:
+            if obj not in self.objects:
+                obj._cleanup(root)
+
+        for i, pane in enumerate(self.objects):
             if pane in old_objects:
                 child, _ = pane._models[root.ref['id']]
             else:
                 child = pane._get_model(doc, root, model, comm)
             new_models.append(child)
-        for obj in old_objects:
-            if obj not in self.objects:
-                obj._cleanup(root)
         return new_models
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
@@ -216,6 +226,7 @@ class ListPanel(Panel):
                                  (expected, type(self).__name__))
         for i, pane in zip(range(start, end), panes):
             new_objects[i] = panel(pane)
+
         self.objects = new_objects
 
     def clone(self, *objects, **params):
@@ -342,10 +353,19 @@ class Column(ListPanel):
     _bokeh_model = BkColumn
 
 
-class WidgetBox(Column):
+class WidgetBox(ListPanel):
     """
     Vertical layout of widgets.
     """
+
+    _rename = {'objects': 'children', 'horizontal': None}
+
+    horizontal = param.Boolean(default=False, doc="""Whether to lay out the
+                    widgets in a Row layout as opposed to a Column layout.""")
+
+    @property
+    def _bokeh_model(self):
+        return BkRow if self.horizontal else BkColumn
 
     css_classes = param.List(default=['widget-box'], doc="""
         CSS classes to apply to the layout.""")
@@ -463,6 +483,12 @@ class Tabs(ListPanel):
         for i, (name, pane) in enumerate(zip(self._names, self)):
             pane = panel(pane, name=name)
             self.objects[i] = pane
+
+        for obj in old_objects:
+            if obj not in self.objects:
+                obj._cleanup(root)
+
+        for i, (name, pane) in enumerate(zip(self._names, self)):
             if pane in old_objects:
                 child, _ = pane._models[root.ref['id']]
             else:
@@ -470,9 +496,6 @@ class Tabs(ListPanel):
             child = BkPanel(title=name, name=pane.name, child=child,
                             closable=self.closable)
             new_models.append(child)
-        for obj in old_objects:
-            if obj not in self.objects:
-                obj._cleanup(root)
         return new_models
 
     #----------------------------------------------------------------

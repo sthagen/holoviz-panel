@@ -1,9 +1,9 @@
 from __future__ import absolute_import, division, unicode_literals
 
 import pytest
-from datetime import datetime
+from datetime import datetime, date
 
-from panel.models import FileInput as BkFileInput
+from bokeh.models.widgets import FileInput as BkFileInput
 from panel.widgets import (Checkbox, DatePicker, DatetimeInput, FileInput,
                            LiteralInput, TextInput, StaticText)
 
@@ -42,6 +42,12 @@ def test_date_picker(document, comm):
     date_picker._comm_change({'value': 'Mon Sep 03 2018'})
     assert date_picker.value == datetime(2018, 9, 3)
 
+    date_picker._comm_change({'value': date(2018, 9, 5)})
+    assert date_picker.value == date(2018, 9, 5)
+
+    date_picker._comm_change({'value': datetime(2018, 9, 6)})
+    assert date_picker.value == datetime(2018, 9, 6)
+
     date_picker.value = datetime(2018, 9, 4)
     assert widget.value == date_picker.value
 
@@ -53,11 +59,9 @@ def test_file_input(document, comm):
 
     assert isinstance(widget, BkFileInput)
 
-    file_input._comm_change({'value': 'data:text/plain;base64,U29tZSB0ZXh0Cg=='})
+    file_input._comm_change({'mime_type': 'text/plain', 'value': 'U29tZSB0ZXh0Cg=='})
     assert file_input.value == b'Some text\n'
-
-    file_input.param.trigger('value')
-    assert widget.value == 'data:text/plain;base64,U29tZSB0ZXh0Cg=='
+    assert file_input.mime_type == 'text/plain'
 
 
 def test_literal_input(document, comm):

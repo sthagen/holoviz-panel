@@ -47,12 +47,19 @@ ABORT_JS = """
 if (!window.PyViz) {{
   return;
 }}
+var events = [];
 var receiver = window.PyViz.receivers['{plot_id}'];
-var events = receiver ? receiver._partial.content.events : [];
+if (receiver &&
+        receiver._partial &&
+        receiver._partial.content &&
+        receiver._partial.content.events) {{
+    events = receiver._partial.content.events;
+}}
+
 for (var event of events) {{
-  if ((event.kind == 'ModelChanged') && (event.attr == '{change}') &&
-      (cb_obj.id == event.model.id) &&
-      (cb_obj['{change}'] == event.new)) {{
+  if ((event.kind === 'ModelChanged') && (event.attr === '{change}') &&
+      (cb_obj.id === event.model.id) &&
+      (JSON.stringify(cb_obj['{change}']) === JSON.stringify(event.new))) {{
     events.pop(events.indexOf(event))
     return;
   }}
@@ -66,7 +73,10 @@ def get_comm_customjs(change, client_comm, plot_id, timeout=5000, debounce=50):
     """
     # Abort callback if value matches last received event
     abort = ABORT_JS.format(plot_id=plot_id, change=change)
-    data_template = "data = {{{change}: cb_obj['{change}'], 'id': cb_obj.id}};"
+    data_template = """\
+data = {{{change}: cb_obj['{change}'], 'id': cb_obj.id}};
+cb_obj.event_name = '{change}';"""
+
     fetch_data = data_template.format(change=change)
     self_callback = JS_CALLBACK.format(
         comm_id=client_comm.id, timeout=timeout, debounce=debounce,
