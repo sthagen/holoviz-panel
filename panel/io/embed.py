@@ -66,7 +66,7 @@ def save_dict(state, key=(), depth=0, max_depth=None, save_path='', load_path=No
 #---------------------------------------------------------------------
 
 def embed_state(panel, model, doc, max_states=1000, max_opts=3,
-                json=False, save_path='./', load_path=None):
+                json=False, json_prefix='', save_path='./', load_path=None):
     """
     Embeds the state of the application on a State model which allows
     exporting a static version of an app. This works by finding all
@@ -94,11 +94,19 @@ def embed_state(panel, model, doc, max_states=1000, max_opts=3,
     load_path: str (default=None)
       The path or URL the json files will be loaded from.
     """
+    from ..layout import Panel
     from ..links import Link
     from ..models.state import State
+    from ..pane import PaneBase
     from ..widgets import Widget, DiscreteSlider
 
     target = model.ref['id']
+    if isinstance(panel, PaneBase) and target in panel.layout._models:
+        panel = panel.layout
+
+    if not isinstance(panel, Panel):
+        add_to_doc(model, doc)
+        return
     _, _, _, comm = state._views[target]
 
     model.tags.append('embedded')
@@ -162,7 +170,7 @@ def embed_state(panel, model, doc, max_states=1000, max_opts=3,
             pass
 
     if json:
-        random_dir = uuid.uuid4().hex
+        random_dir = '_'.join([json_prefix, uuid.uuid4().hex])
         save_path = os.path.join(save_path, random_dir)
         if load_path is not None:
             load_path = os.path.join(load_path, random_dir)
