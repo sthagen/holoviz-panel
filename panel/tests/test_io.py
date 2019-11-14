@@ -5,10 +5,13 @@ import glob
 from io import StringIO
 
 from panel import Row
+from panel.io.notebook import ipywidget
 from panel.config import config
 from panel.io.embed import embed_state
 from panel.pane import Str
 from panel.widgets import Select, FloatSlider, Checkbox
+
+from .util import jb_available
 
 
 def test_embed_discrete(document, comm):
@@ -127,3 +130,38 @@ def test_save_embed_json(tmpdir):
         assert event['kind'] == 'ModelChanged'
         assert event['attr'] == 'text'
         assert event['new'] == '<pre>%s</pre>' % v
+
+
+@jb_available
+def test_ipywidget():
+    pane = Str('A')
+    widget = ipywidget(pane)
+
+    assert widget._view_count == 0
+    assert len(pane._models) == 1
+
+    init_id = list(pane._models)[0]
+
+    widget._view_count = 1
+
+    assert widget._view_count == 1
+    assert init_id in pane._models
+
+    widget._view_count = 0
+
+    assert len(pane._models) == 0
+
+    widget._view_count = 1
+
+    assert len(pane._models) == 1
+    prev_id = list(pane._models)[0]
+
+    widget.notify_change({'new': 1, 'old': 1, 'name': '_view_count',
+                          'type': 'change', 'model': widget})
+    assert prev_id in pane._models
+    assert len(pane._models) == 1
+
+    widget._view_count = 2
+
+    assert prev_id in pane._models
+    assert len(pane._models) == 1

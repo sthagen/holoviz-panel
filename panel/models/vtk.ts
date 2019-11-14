@@ -1,7 +1,8 @@
-import * as p from "core/properties"
-import {clone} from "core/util/object"
-import {HTMLBox, HTMLBoxView} from "models/layouts/html_box"
-import {div} from "core/dom"
+import * as p from "@bokehjs/core/properties"
+import {clone} from "@bokehjs/core/util/object"
+import {HTMLBox, HTMLBoxView} from "@bokehjs/models/layouts/html_box"
+import {div} from "@bokehjs/core/dom"
+
 const vtk = (window as any).vtk
 
 function majorAxis(vec3: number[], idxA: number, idxB: number): number[] {
@@ -11,6 +12,8 @@ function majorAxis(vec3: number[], idxA: number, idxB: number): number[] {
   axis[idx] = value
   return axis
 }
+
+
 
 export class VTKPlotView extends HTMLBoxView {
   model: VTKPlot
@@ -48,7 +51,7 @@ export class VTKPlotView extends HTMLBoxView {
     orientationWidget.setViewportSize(0.15)
     orientationWidget.setMinPixelSize(100)
     orientationWidget.setMaxPixelSize(300)
-    
+
     this._orientationWidget = orientationWidget
 
     const widgetManager = vtk.Widgets.Core.vtkWidgetManager.newInstance()
@@ -90,12 +93,12 @@ export class VTKPlotView extends HTMLBoxView {
       if (direction[2]) {
         this._camera.setViewUp(majorAxis(viewUp, 0, 1))
       }
-      
+
       this._orientationWidget.updateMarkerOrientation()
       this._renderer.resetCameraClippingRange()
       this._rendererEl.getRenderWindow().render()
     })
-    
+
     this._orientation_widget_visbility(this.model.orientation_widget)
   }
 
@@ -114,9 +117,9 @@ export class VTKPlotView extends HTMLBoxView {
       this._camera.onModified(() => this._get_camera_state())
       this._remove_default_key_binding()
       this.model.renderer_el = this._rendererEl
-      /*this._interactor.onRightButtonPress((_callData: any) => {
-        console.log('Not Implemented')
-      })*/
+      // this._interactor.onRightButtonPress((_callData: any) => {
+      //   console.log('Not Implemented')
+      // })
     }
     super.after_layout()
   }
@@ -205,9 +208,7 @@ export class VTKPlotView extends HTMLBoxView {
         const fn = vtk.macro.debounce(() => {
           if (this._orientationWidget == null)
             this._create_orientation_widget()
-
-          this._renderer.resetCamera()
-          this._rendererEl.getRenderWindow().render()
+          this._set_camera_state()
         }, 100)
         sceneImporter.setUrl('index.json')
         sceneImporter.onReady(fn)
@@ -227,7 +228,6 @@ export namespace VTKPlot {
     camera: p.Property<any>
     enable_keybindings: p.Property<boolean>
     orientation_widget: p.Property<boolean>
-    renderer_el: p.Property<any>
   }
 }
 
@@ -235,13 +235,27 @@ export interface VTKPlot extends VTKPlot.Attrs {}
 
 export class VTKPlot extends HTMLBox {
   properties: VTKPlot.Props
+  renderer_el: any
+  outline: any
+  outline_actor: any
 
   constructor(attrs?: Partial<VTKPlot.Attrs>) {
     super(attrs)
+    this.renderer_el = null
+    this.outline = vtk.Filters.General.vtkOutlineFilter.newInstance() //use to display bouding box of a selected actor
+    const mapper = vtk.Rendering.Core.vtkMapper.newInstance()
+    mapper.setInputConnection(this.outline.getOutputPort())
+    this.outline_actor = vtk.Rendering.Core.vtkActor.newInstance()
+    this.outline_actor.setMapper(mapper)
   }
 
-  static initClass(): void {
-    this.prototype.type = "VTKPlot"
+  getActors() : [any] {
+    return this.renderer_el.getRenderer().getActors()
+  }
+
+  static __module__ = "panel.models.vtk"
+
+  static init_VTKPlot(): void {
     this.prototype.default_view = VTKPlotView
 
     this.define<VTKPlot.Props>({
@@ -249,7 +263,6 @@ export class VTKPlot extends HTMLBox {
       camera:             [ p.Any            ],
       enable_keybindings: [ p.Boolean, false ],
       orientation_widget: [ p.Boolean, false ],
-      renderer_el:        [ p.Any            ]
     })
 
     this.override({
@@ -258,4 +271,3 @@ export class VTKPlot extends HTMLBox {
     });
   }
 }
-VTKPlot.initClass()

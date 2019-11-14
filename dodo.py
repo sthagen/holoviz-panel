@@ -14,3 +14,8 @@ def task_pip_on_conda():
         # this interferes with pip-installed nose	
         'conda remove -y --force nose'	
     ]}
+
+
+def _build_dev(channel):
+    channels = " ".join(['-c %s' % c for c in channel])
+    return "conda build %s conda.recipe/ --build-only" % channels

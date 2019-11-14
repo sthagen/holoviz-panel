@@ -30,20 +30,18 @@ def get_setup_version(reponame):
         return json.load(open(version_file_path, 'r'))['version_string']
 
 
-def _build_models():
-    try:
-        from panel.compiler import build_custom_models
-        print("Building custom models:")
-        build_custom_models()
-    except ImportError as e:
-        print("Custom model compilation failed with: %s" % e)
+def _build_paneljs():
+    from bokeh.ext import build
+    print("Building custom models:")
+    panel_dir = os.path.join(os.path.dirname(__file__), "panel")
+    build(panel_dir)
 
 
 class CustomDevelopCommand(develop):
     """Custom installation for development mode."""
 
     def run(self):
-        _build_models()
+        _build_paneljs()
         develop.run(self)
 
 
@@ -51,7 +49,7 @@ class CustomInstallCommand(install):
     """Custom installation for install mode."""
 
     def run(self):
-        _build_models()
+        _build_paneljs()
         install.run(self)
 
 
@@ -59,7 +57,7 @@ class CustomSdistCommand(sdist):
     """Custom installation for sdist mode."""
 
     def run(self):
-        _build_models()
+        _build_paneljs()
         sdist.run(self)
 
 
@@ -78,7 +76,7 @@ try:
 
         def run(self):
             """Do nothing so the command intentionally fails."""
-            _build_models()
+            _build_paneljs()
             bdist_wheel.run(self)
 
     _COMMANDS['bdist_wheel'] = CustomBdistWheelCommand
@@ -88,7 +86,7 @@ except:
 ########## dependencies ##########
 
 install_requires = [
-    'bokeh >=1.3.0',
+    'bokeh >=1.4.0',
     'param >=1.9.0',
     'pyviz_comms >=0.7.2',
     'markdown',
@@ -114,14 +112,16 @@ extras_require = {
         'nbsmoke >=0.2.0',
         'pytest-cov ==2.5.1',
         'codecov',
-        # For Panes.ipynb
+        # For examples
         'hvplot',
         'plotly',
         'altair',
+        'streamz',
         'vega_datasets',
         'vtk ==8.1.1',
         'scikit-learn',
-        'datashader'
+        'datashader',
+        'jupyter_bokeh'
     ],
     'recommended': _recommended,
     'doc': _recommended + [
@@ -143,7 +143,7 @@ extras_require['build'] = [
     'param >=1.9.0',
     'pyct >=0.4.4',
     'setuptools >=30.3.0',
-    'bokeh >=1.1.0',
+    'bokeh >=1.4.0',
     'pyviz_comms >=0.6.0',
     'nodejs >=9.11.1',
 ]

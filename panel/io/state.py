@@ -18,12 +18,16 @@ class _state(param.Parameterized):
     apps to indicate their state to a user.
     """
 
-    _curdoc = param.ClassSelector(class_=Document, doc="""
-        The bokeh Document for which a server event is currently being
-        processed.""")
+    cache = param.Dict(default={}, doc="""
+       Global location you can use to cache large datasets or expensive computation results
+       across multiple client sessions for a given server.""") 
 
     webdriver = param.Parameter(default=None, doc="""
         Selenium webdriver used to export bokeh models to pngs.""")
+
+    _curdoc = param.ClassSelector(class_=Document, doc="""
+        The bokeh Document for which a server event is currently being
+        processed.""")
 
     # Whether to hold comm events
     _hold = False
@@ -36,8 +40,25 @@ class _state(param.Parameterized):
     # An index of all currently active views
     _views = {}
 
-    # An index of all curently active servers
+    # An index of all currently active servers
     _servers = {}
+
+    def __repr__(self):
+        server_info = []
+        for server, panel, docs in self._servers.values():
+            server_info.append("{}:{:d} - {!r}".format(
+                server.address or "localhost", server.port, panel)
+            )
+        return "state(servers=\n  {}\n)".format(",\n  ".join(server_info))
+
+    def kill_all_servers(self):
+        """Stop all servers and clear them from the current state."""
+        for server_id in self._servers:
+            try:
+                self._servers[server_id][0].stop()
+            except AssertionError:  # can't stop a server twice
+                pass
+        self._servers = {}
 
     def _unblocked(self, doc):
         thread = threading.current_thread()

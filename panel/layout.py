@@ -4,28 +4,31 @@ in flexible ways to build complex dashboards.
 """
 from __future__ import absolute_import, division, unicode_literals
 
-from collections import OrderedDict
+import math
+
+from collections import OrderedDict, namedtuple
+from functools import partial
 
 import param
 import numpy as np
 
-from bokeh.layouts import grid as _bk_grid
-from bokeh.models import (Column as BkColumn, Row as BkRow,
-                          Spacer as BkSpacer, GridBox as BkGridBox,
-                          Box as BkBox, Markup as BkMarkup)
+from bokeh.models import (
+    Box as BkBox, Column as BkColumn, Div as BkDiv, GridBox as BkGridBox,
+    Markup as BkMarkup, Row as BkRow, Spacer as BkSpacer
+)
 from bokeh.models.widgets import Tabs as BkTabs, Panel as BkPanel
 
 from .util import param_name, param_reprs
 from .viewable import Reactive
+
+_row = namedtuple("row", ["children"])
+_col = namedtuple("col", ["children"])
 
 
 class Panel(Reactive):
     """
     Abstract baseclass for a layout of Viewables.
     """
-
-    objects = param.Parameter(default=[], doc="""
-        The list of child objects that make up the layout.""")
 
     _bokeh_model = None
 
@@ -164,6 +167,10 @@ class ListPanel(Panel):
     objects = param.List(default=[], doc="""
         The list of child objects that make up the layout.""")
 
+    scroll = param.Boolean(default=False, doc="""
+        Whether to add scrollbars if the content overflows the size
+        of the container.""")
+
     __abstract = True
 
     def __init__(self, *objects, **params):
@@ -175,6 +182,15 @@ class ListPanel(Panel):
                                  "not both." % type(self).__name__)
             params['objects'] = [panel(pane) for pane in objects]
         super(Panel, self).__init__(**params)
+
+    def _process_param_change(self, params):
+        scroll = params.pop('scroll', None)
+        css_classes = self.css_classes or []
+        if scroll:
+            params['css_classes'] = css_classes + ['scrollable']
+        elif scroll == False:
+            params['css_classes'] = css_classes
+        return super(ListPanel, self)._process_param_change(params)
 
     #----------------------------------------------------------------
     # Public API
@@ -369,14 +385,106 @@ class GridBox(ListPanel):
 
     _bokeh_model = BkGridBox
 
+    _rename = {'objects': 'children', 'col_sizing': 'cols', 'row_sizing': 'rows'}
+
+    @classmethod
+    def _flatten_grid(cls, layout, nrows=None, ncols=None):
+        Item = namedtuple("Item", ["layout", "r0", "c0", "r1", "c1"])
+        Grid = namedtuple("Grid", ["nrows", "ncols", "items"])
+
+        def gcd(a, b):
+            a, b = abs(a), abs(b)
+            while b != 0:
+                a, b = b, a % b
+            return a
+
+        def lcm(a, *rest):
+            for b in rest:
+                a = (a*b) // gcd(a, b)
+            return a
+
+        nonempty = lambda child: child.nrows != 0 and child.ncols != 0
+
+        def _flatten(layout, nrows=None, ncols=None):
+            _flatten_ = partial(_flatten, nrows=nrows, ncols=ncols)
+            if isinstance(layout, _row):
+                children = list(filter(nonempty, map(_flatten_, layout.children)))
+                if not children:
+                    return Grid(0, 0, [])
+
+                nrows = lcm(*[ child.nrows for child in children ])
+                if not ncols: # This differs from bokeh.layout.grid
+                    ncols = sum([ child.ncols for child in children ])
+
+                items = []
+                offset = 0
+                for child in children:
+                    factor = nrows//child.nrows
+
+                    for (layout, r0, c0, r1, c1) in child.items:
+                        items.append((layout, factor*r0, c0 + offset, factor*r1, c1 + offset))
+
+                    offset += child.ncols
+
+                return Grid(nrows, ncols, items)
+            elif isinstance(layout, _col):
+                children = list(filter(nonempty, map(_flatten_, layout.children)))
+                if not children:
+                    return Grid(0, 0, [])
+
+                if not nrows: # This differs from bokeh.layout.grid
+                    nrows = sum([ child.nrows for child in children ])
+                ncols = lcm(*[ child.ncols for child in children ])
+
+                items = []
+                offset = 0
+                for child in children:
+                    factor = ncols//child.ncols
+
+                    for (layout, r0, c0, r1, c1) in child.items:
+                        items.append((layout, r0 + offset, factor*c0, r1 + offset, factor*c1))
+
+                    offset += child.nrows
+
+                return Grid(nrows, ncols, items)
+            else:
+                return Grid(1, 1, [Item(layout, 0, 0, 1, 1)])
+
+        grid = _flatten(layout, nrows, ncols)
+
+        children = []
+        for (layout, r0, c0, r1, c1) in grid.items:
+            if layout is not None:
+                children.append((layout, r0, c0, r1 - r0, c1 - c0))
+        return children
+
+    @classmethod
+    def _get_children(cls, children, nrows=None, ncols=None):
+        """
+        This is a copy of parts of the bokeh.layouts.grid implementation
+        to avoid distributing non-filled columns.
+        """
+        if nrows is not None or ncols is not None:
+            N = len(children)
+            if ncols is None:
+                ncols = int(math.ceil(N/nrows))
+            layout = _col([ _row(children[i:i+ncols]) for i in range(0, N, ncols) ])
+        else:
+            def traverse(children, level=0):
+                if isinstance(children, list):
+                    container = _col if level % 2 == 0 else _row
+                    return container([ traverse(child, level+1) for child in children ])
+                else:
+                    return children
+            layout = traverse(children)
+        return cls._flatten_grid(layout, nrows, ncols)
+
     def _get_model(self, doc, root=None, parent=None, comm=None):
         model = self._bokeh_model()
         if root is None:
             root = model
         objects = self._get_objects(model, [], doc, root, comm)
-        grid = _bk_grid(objects, nrows=self.nrows, ncols=self.ncols,
-                        sizing_mode=self.sizing_mode)
-        model.children = grid.children
+        model.children = self._get_children(objects, self.nrows, self.ncols)
         props = {k: v for k, v in self._init_properties().items()
                  if k not in ('nrows', 'ncols')}
         model.update(**self._process_param_change(props))
@@ -391,9 +499,7 @@ class GridBox(ListPanel):
             else:
                 old = self.objects
             objects = self._get_objects(model, old, doc, root, comm)
-            grid = _bk_grid(objects, nrows=self.nrows, ncols=self.ncols,
-                            sizing_mode=self.sizing_mode)
-            children = grid.children
+            children = self._get_children(objects, self.nrows, self.ncols)
             msg[self._rename['objects']] = children
 
         held = doc._hold
@@ -432,6 +538,20 @@ class WidgetBox(ListPanel):
         Allows to create additional space around the component. May
         be specified as a two-tuple of the form (vertical, horizontal)
         or a four-tuple (top, right, bottom, left).""")
+
+    disabled = param.Boolean(default=False, doc="""
+       Whether the widget is disabled.""")
+
+    @param.depends('disabled', 'objects', watch=True)
+    def _disable_widgets(self):
+        for obj in self:
+            if hasattr(obj, 'disabled'):
+                obj.disabled = self.disabled
+
+    def __init__(self, *objects, **params):
+        super(WidgetBox, self).__init__(*objects, **params)
+        if self.disabled:
+            self._disable_widgets()
 
 
 class Tabs(ListPanel):
@@ -719,8 +839,7 @@ class GridSpec(Panel):
 
     mode = param.ObjectSelector(
         default='warn', objects=['warn', 'error', 'override'], doc="""
-        Whether to warn, error or simply override on overlapping
-        assignment.""")
+        Whether to warn, error or simply override on overlapping assignment.""")
 
     width = param.Integer(default=600)
 
@@ -825,12 +944,12 @@ class GridSpec(Panel):
     @property
     def nrows(self):
         max_yidx = [y1 for (_, _, y1, _) in self.objects if y1 is not None]
-        return max(max_yidx) if max_yidx else 0
+        return max(max_yidx) if max_yidx else (1 if len(self.objects) else 0)
 
     @property
     def ncols(self):
         max_xidx = [x1 for (_, _, _, x1) in self.objects if x1 is not None]
-        return max(max_xidx) if max_xidx else 0
+        return max(max_xidx) if max_xidx else (1 if len(self.objects) else 0)
 
     @property
     def grid(self):
@@ -862,7 +981,7 @@ class GridSpec(Panel):
         for obj in self.objects.values():
             yield obj
 
-    def __delitem__(self, index, trigger=True):
+    def __delitem__(self, index):
         if isinstance(index, tuple):
             yidx, xidx = index
         else:
@@ -873,11 +992,9 @@ class GridSpec(Panel):
             deleted = OrderedDict([list(o)[0] for o in subgrid.flatten()])
         else:
             deleted = [list(subgrid)[0][0]]
-        if deleted:
-            for key in deleted:
-                del self.objects[key]
-            if trigger:
-                self.param.trigger('objects')
+        for key in deleted:
+            del self.objects[key]
+        self.param.trigger('objects')
 
     def __getitem__(self, index):
         if isinstance(index, tuple):
@@ -937,7 +1054,7 @@ class GridSpec(Panel):
 
         key = (y0, x0, y1, x1)
         overlap = key in self.objects
-        clone = self.clone(mode='override')
+        clone = self.clone(objects=OrderedDict(self.objects), mode='override')
         if not overlap:
             clone.objects[key] = Pane(obj)
             grid = clone.grid
@@ -950,7 +1067,10 @@ class GridSpec(Panel):
             overlapping = ''
             objects = []
             for (yidx, xidx) in zip(*np.where(overlap_grid)):
-                old_obj = self[yidx, xidx]
+                try:
+                    old_obj = self[yidx, xidx]
+                except:
+                    continue
                 if old_obj not in objects:
                     objects.append(old_obj)
                     overlapping += '    (%d, %d): %s\n\n' % (yidx, xidx, old_obj)
@@ -963,7 +1083,14 @@ class GridSpec(Panel):
                 raise IndexError(overlap_text)
             elif self.mode == 'warn':
                 self.param.warning(overlap_text)
-            self.__delitem__(index, False)
+
+            subgrid = self._object_grid[index]
+            if isinstance(subgrid, set):
+                objects = [list(subgrid)[0][0]] if subgrid else []
+            else:
+                objects = [list(o)[0][0] for o in subgrid.flatten()]
+            for dkey in objects:
+                del self.objects[dkey]
         self.objects[key] = Pane(obj)
         self.param.trigger('objects')
 
@@ -996,3 +1123,20 @@ class HSpacer(Spacer):
     """
 
     sizing_mode = param.Parameter(default='stretch_width', readonly=True)
+
+
+class Divider(Reactive):
+    """A Divider line"""
+
+    width_policy = param.ObjectSelector(default="fit", readonly=True)
+
+    _bokeh_model = BkDiv
+
+    def _get_model(self, doc, root=None, parent=None, comm=None):
+        properties = self._process_param_change(self._init_properties())
+        properties['style'] = {'width': '100%', 'height': '100%'}
+        model = self._bokeh_model(text='<hr></hr>', **properties)
+        if root is None:
+            root = model
+        self._models[root.ref['id']] = (model, parent)
+        return model

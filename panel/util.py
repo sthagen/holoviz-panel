@@ -7,13 +7,20 @@ import re
 import sys
 import inspect
 import numbers
+import datetime as dt
 
-from collections import defaultdict, MutableSequence, MutableMapping, OrderedDict
 from datetime import datetime
 from six import string_types
+from collections import defaultdict, OrderedDict
+try:  # python >= 3.3
+    from collections.abc import MutableSequence, MutableMapping
+except ImportError:
+    from collections import MutableSequence, MutableMapping
 
 import param
+import numpy as np
 
+datetime_types = (np.datetime64, dt.datetime, dt.date)
 
 if sys.version_info.major > 2:
     unicode = str
@@ -74,7 +81,7 @@ def param_name(name):
     """
     Removes the integer id from a Parameterized class name.
     """
-    match = re.match('(.)+(\d){5}', name)
+    match = re.match(r'(.)+(\d){5}', name)
     return name[:-5] if match else name
 
 
@@ -115,7 +122,7 @@ def abbreviated_repr(value, max_length=25, natural_breaks=(',', ' ')):
     return vrepr
 
 
-def param_reprs(parameterized, skip=[]):
+def param_reprs(parameterized, skip=None):
     """
     Returns a list of reprs for parameters on the parameterized object.
     Skips default and empty values.
@@ -128,7 +135,7 @@ def param_reprs(parameterized, skip=[]):
         elif isinstance(v, string_types) and v == '': continue
         elif isinstance(v, list) and v == []: continue
         elif isinstance(v, dict) and v == {}: continue
-        elif p in skip or (p == 'name' and v.startswith(cls)): continue
+        elif (skip and p in skip) or (p == 'name' and v.startswith(cls)): continue
         param_reprs.append('%s=%s' % (p, abbreviated_repr(v)))
     return param_reprs
 
@@ -162,6 +169,19 @@ def is_parameterized(obj):
     return (isinstance(obj, param.Parameterized) or
             (isinstance(obj, type) and issubclass(obj, param.Parameterized)))
 
+
+def isdatetime(value):
+    """
+    Whether the array or scalar is recognized datetime type.
+    """
+    if isinstance(value, np.ndarray):
+        return (value.dtype.kind == "M" or
+                (value.dtype.kind == "O" and len(value) and
+                 isinstance(value[0], datetime_types)))
+    elif isinstance(value, list):
+        return all(isinstance(d, datetime_types) for d in value)
+    else:
+        return isinstance(value, datetime_types)
 
 def value_as_datetime(value):
     """

@@ -4,11 +4,12 @@ import param
 import pytest
 
 from panel.io import block_comm
-from panel.widgets import CompositeWidget, TextInput, Widget
-from panel._testing.util import check_layoutable_properties
+from panel.widgets import CompositeWidget, DataFrame, TextInput, Widget
+from panel.tests.util import check_layoutable_properties
 
 all_widgets = [w for w in param.concrete_descendents(Widget).values()
-               if not w.__name__.startswith('_') and not issubclass(w, CompositeWidget)]
+               if not w.__name__.startswith('_') and
+               not issubclass(w, (CompositeWidget, DataFrame))]
 
 
 @pytest.mark.parametrize('widget', all_widgets)
@@ -46,7 +47,7 @@ def test_widget_clone_override(widget):
     assert ([(k, v) for k, v in sorted(w.param.get_param_values()) if k not in ['name', 'width']] ==
             [(k, v) for k, v in sorted(clone.param.get_param_values()) if k not in ['name', 'width']])
     assert clone.width == 50
-    assert w.width is None
+    assert w.width is widget.width
 
 
 @pytest.mark.parametrize('widget', all_widgets)

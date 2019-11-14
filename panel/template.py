@@ -4,15 +4,24 @@ documents.
 """
 from __future__ import absolute_import, division, unicode_literals
 
+import sys
+
+import param
+
+from bokeh.document.document import Document as _Document
 from bokeh.io import curdoc as _curdoc
+from bokeh.models import Row as _BkRow
 from jinja2.environment import Template as _Template
 from six import string_types
+from pyviz_comms import JupyterCommManager as _JupyterCommManager
 
+from .config import panel_extension
 from .io.model import add_to_doc
+from .io.notebook import render_template
 from .io.server import StoppableThread, get_server
 from .io.state import state
 from .layout import Column
-from .pane import panel as _panel, HTML, Str
+from .pane import panel as _panel, PaneBase, HTML, Str
 from .widgets import Button
 
 _server_info = (
@@ -20,38 +29,52 @@ _server_info = (
     'https://localhost:{port}</a>')
 
 
-class Template(object):
+class Template(param.Parameterized):
     """
     A Template is a high-level component to render multiple Panel
-    objects into a single HTML document. The Template object should be
-    given a string or Jinja2 Template object in the constructor and
-    can then be populated with Panel objects. When adding panels to
-    the Template a unique name must be provided, making it possible to
-    refer to them uniquely in the template. For instance, two panels added like
-    this:
-
-        template.add_panel('A', pn.panel('A'))
-        template.add_panel('B', pn.panel('B'))
-
-    May then be referenced in the template using the `embed` macro:
+    objects into a single HTML document defined through a Jinja2
+    template. The Template object is given a Jinja2 template and then
+    allows populating this template by adding Panel objects, which are
+    given unique names. These unique names may then be referenced in
+    the template to insert the rendered Panel object at a specific
+    location. For instance, given a Jinja2 template that defines roots
+    A and B like this:
 
         <div> {{ embed(roots.A) }} </div>
         <div> {{ embed(roots.B) }} </div>
 
+    We can then populate the template by adding panel 'A' and 'B' to
+    the Template object:
+
+        template.add_panel('A', pn.panel('A'))
+        template.add_panel('B', pn.panel('B'))
+
     Once a template has been fully populated it can be rendered using
-    the same API as other Panel objects.
+    the same API as other Panel objects. Note that all roots that have
+    been declared using the {{ embed(roots.A) }} syntax in the Jinja2
+    template must be defined when rendered.
+
+    Since embedding complex CSS frameworks inside a notebook can have
+    undesirable side-effects and a notebook does not afford the same
+    amount of screen space a Template may given separate template
+    and nb_template objects. This allows for different layouts when
+    served as a standalone server and when used in the notebook.
     """
 
-    def __init__(self, template=None, items=None):
+    def __init__(self, template=None, items=None, nb_template=None, **params):
+        super(Template, self).__init__(**params)
         if isinstance(template, string_types):
             template = _Template(template)
         self.template = template
+        if isinstance(nb_template, string_types):
+            nb_template = _Template(nb_template)
+        self.nb_template = nb_template or template
         self._render_items = {}
+        self._server = None
+        self._layout = self._build_layout()
         items = {} if items is None else items
         for name, item in items.items():
             self.add_panel(name, item)
-        self._server = None
-        self._layout = self._build_layout()
 
     def _build_layout(self):
         str_repr = Str(repr(self))
@@ -86,20 +109,76 @@ class Template(object):
     def __repr__(self):
         cls = type(self).__name__
         spacer = '\n    '
-        objs = ['[%s] %s' % (name, obj.__repr__(1))
-                for name, obj in self._render_items.items()]
+        objs = ['[%s] %s' % (name, obj[0].__repr__(1))
+                for name, obj in self._render_items.items()
+                if not name.startswith('_')]
         template = '{cls}{spacer}{objs}'
         return template.format(
             cls=cls, objs=('%s' % spacer).join(objs), spacer=spacer)
 
+    def _init_doc(self, doc=None, comm=None, title=None, notebook=False):
+        doc = doc or _curdoc()
+        if title is not None:
+            doc.title = title
+
+        root = None
+        preprocess_root = _BkRow()
+        ref = preprocess_root.ref['id']
+        for name, (obj, tags) in self._render_items.items():
+            if root is None:
+                root = model = obj.get_root(doc, comm)
+            elif isinstance(obj, PaneBase):
+                if obj._updates:
+                    model = obj._get_model(doc, root, root, comm=comm)
+                else:
+                    model = obj.layout._get_model(doc, root, root, comm=comm)
+            else:
+                model = obj._get_model(doc, root, root, comm)
+            obj._models[ref] = obj._models[root.ref['id']]
+            preprocess_root.children.append(model)
+            model.name = name
+            model.tags = tags
+            if hasattr(doc, 'on_session_destroyed'):
+                doc.on_session_destroyed(obj._server_destroy)
+                obj._documents[doc] = model
+            add_to_doc(model, doc, hold=bool(comm))
+
+        for (obj, _) in self._render_items.values():
+            obj._preprocess(preprocess_root)
+
+        if notebook:
+            doc.template = self.nb_template
+        else:
+            doc.template = self.template
+        return doc
+
     def _repr_mimebundle_(self, include=None, exclude=None):
-        return self._layout._repr_mimebundle_(include, exclude)
+        loaded = panel_extension._loaded
+        if not loaded and 'holoviews' in sys.modules:
+            import holoviews as hv
+            loaded = hv.extension._loaded
+        if not loaded:
+            param.main.warning('Displaying Panel objects in the notebook '
+                               'requires the panel extension to be loaded. '
+                               'Ensure you run pn.extension() before '
+                               'displaying objects in the notebook.')
+            return None
+
+        try:
+            assert get_ipython().kernel is not None # noqa
+            state._comm_manager = _JupyterCommManager
+        except:
+            pass
+        doc = _Document()
+        comm = state._comm_manager.get_server_comm()
+        self._init_doc(doc, comm, notebook=True)
+        return render_template(doc, comm)
 
     #----------------------------------------------------------------
     # Public API
     #----------------------------------------------------------------
-    
-    def add_panel(self, name, panel):
+
+    def add_panel(self, name, panel, tags=[]):
         """
         Add panels to the Template, which may then be referenced by
         the given name using the jinja2 embed macro.
@@ -116,7 +195,7 @@ class Template(object):
                              'another panel. Ensure each panel '
                              'has a unique name by which it can be '
                              'referenced in the template.' % name)
-        self._render_items[name] = _panel(panel)
+        self._render_items[name] = (_panel(panel), tags)
         self._layout[0].object = repr(self)
 
     def server_doc(self, doc=None, title=None):
@@ -136,18 +215,7 @@ class Template(object):
         doc : bokeh.Document
           The Bokeh document the panel was attached to
         """
-        doc = doc or _curdoc()
-        if title is not None:
-            doc.title = title
-        for name, obj in self._render_items.items():
-            model = obj.get_root(doc)
-            model.name = name
-            if hasattr(doc, 'on_session_destroyed'):
-                doc.on_session_destroyed(obj._server_destroy)
-                obj._documents[doc] = model
-            add_to_doc(model, doc)
-        doc.template = self.template
-        return doc
+        return self._init_doc(doc, title=title)
 
     def servable(self, title=None):
         """

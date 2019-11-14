@@ -5,6 +5,7 @@ response to changes to parameters and the underlying bokeh models.
 """
 from __future__ import absolute_import, division, unicode_literals
 
+import logging
 import re
 import sys
 import threading
@@ -23,8 +24,10 @@ from .callbacks import PeriodicCallback
 from .config import config, panel_extension
 from .io.embed import embed_state
 from .io.model import add_to_doc
-from .io.notebook import (get_comm_customjs, push, render_mimebundle,
-                          render_model, show_embed, show_server)
+from .io.notebook import (
+    get_comm_customjs, ipywidget, push, render_mimebundle,
+    render_model, show_embed, show_server
+)
 from .io.save import save
 from .io.state import state
 from .io.server import StoppableThread, get_server
@@ -276,6 +279,20 @@ class Viewable(Layoutable):
         if not loaded and 'holoviews' in sys.modules:
             import holoviews as hv
             loaded = hv.extension._loaded
+
+        if config.comms == 'ipywidgets':
+            widget = ipywidget(self)
+            data = {}
+            if widget._view_name is not None:
+                data['application/vnd.jupyter.widget-view+json'] = {
+                    'version_major': 2,
+                    'version_minor': 0,
+                    'model_id': widget._model_id
+                }
+            if widget._view_name is not None:
+                widget._handle_displayed()
+            return data, {}
+
         if not loaded:
             self.param.warning('Displaying Panel objects in the notebook '
                                'requires the panel extension to be loaded. '
@@ -421,7 +438,7 @@ class Viewable(Layoutable):
         return root
 
     def save(self, filename, title=None, resources=None, template=None,
-             template_variables={}, embed=False, max_states=1000,
+             template_variables=None, embed=False, max_states=1000,
              max_opts=3, embed_json=False, json_prefix='', save_path='./',
              load_path=None):
         """
@@ -435,6 +452,10 @@ class Viewable(Layoutable):
            Optional title for the plot
         resources: bokeh resources
            One of the valid bokeh.resources (e.g. CDN or INLINE)
+       template:
+           passed to underlying io.save
+       template_variables:
+           passed to underlying io.save
         embed: bool
            Whether the state space should be embedded in the saved file.
         max_states: int
@@ -497,6 +518,10 @@ class Viewable(Layoutable):
         The Panel object itself
         """
         if _curdoc().session_context:
+            logger = logging.getLogger('bokeh')
+            for handler in logger.handlers:
+                if isinstance(handler, logging.StreamHandler):
+                    handler.setLevel(logging.WARN)
             self.server_doc(title=title)
         return self
 
@@ -620,13 +645,17 @@ class Reactive(Viewable):
                 if ref not in state._views:
                     continue
                 viewable, root, doc, comm = state._views[ref]
+
                 if comm or state._unblocked(doc):
                     self._update_model(events, msg, root, model, doc, comm)
                     if comm and 'embedded' not in root.tags:
                         push(doc, comm)
                 else:
                     cb = partial(self._update_model, events, msg, root, model, doc, comm)
-                    doc.add_next_tick_callback(cb)
+                    if doc.session_context:
+                        doc.add_next_tick_callback(cb)
+                    else:
+                        cb()
 
         params = self._synced_params()
         if params:
@@ -636,13 +665,19 @@ class Reactive(Viewable):
     def _link_props(self, model, properties, doc, root, comm=None):
         if comm is None:
             for p in properties:
+                if isinstance(p, tuple):
+                    _, p = p
                 model.on_change(p, partial(self._server_change, doc))
         elif config.embed:
             pass
         else:
             client_comm = state._comm_manager.get_client_comm(on_msg=self._comm_change)
             for p in properties:
-                customjs = self._get_customjs(p, client_comm, root.ref['id'])
+                if isinstance(p, tuple):
+                    p, attr = p
+                else:
+                    p, attr = p, p
+                customjs = self._get_customjs(attr, client_comm, root.ref['id'])
                 model.js_on_change(p, customjs)
 
     def _comm_change(self, msg):
@@ -660,7 +695,13 @@ class Reactive(Viewable):
         self._events.update({attr: new})
         if not self._processing:
             self._processing = True
-            doc.add_timeout_callback(partial(self._change_event, doc), self._debounce)
+            if doc.session_context:
+                doc.add_timeout_callback(partial(self._change_event, doc), self._debounce)
+            else:
+                self._change_event(doc)
+
+    def _process_events(self, events):
+        self.set_param(**self._process_property_change(events))
 
     def _change_event(self, doc=None):
         try:
@@ -670,7 +711,7 @@ class Reactive(Viewable):
             state._thread_id = thread_id
             events = self._events
             self._events = {}
-            self.set_param(**self._process_property_change(events))
+            self._process_events(events)
         finally:
             self._processing = False
             state.curdoc = None
@@ -731,7 +772,7 @@ class Reactive(Viewable):
             return
 
         customjs = model.select({'type': CustomJS})
-        pattern = "data\['comm_id'\] = \"(.*)\""
+        pattern = r"data\['comm_id'\] = \"(.*)\""
         for js in customjs:
             comm_ids = list(re.findall(pattern, js.code))
             if not comm_ids:
@@ -824,7 +865,33 @@ class Reactive(Viewable):
             cb.start()
         return cb
 
-    def jslink(self, target, code=None, **links):
+    def jscallback(self, args={}, **callbacks):
+        """
+        Allows defining a JS callback to be triggered when a property
+        changes on the source object. The keyword arguments define the
+        properties that trigger a callback and the JS code that gets
+        executed.
+
+        Arguments
+        ----------
+        args: dict
+          A mapping of objects to make available to the JS callback
+        **callbacks: dict
+          A mapping between properties on the source model and the code
+          to execute when that property changes
+
+        Returns
+        -------
+        callback: Callback
+          The Callback which can be used to disable the callback.
+        """
+
+        from .links import Callback
+        for k, v in list(callbacks.items()):
+            callbacks[k] = self._rename.get(v, v)
+        return Callback(self, code=callbacks, args=args)
+
+    def jslink(self, target, code=None, args=None, bidirectional=False, **links):
         """
         Links properties on the source object to those on the target
         object in JS code. Supports two modes, either specify a
@@ -840,6 +907,8 @@ class Reactive(Viewable):
         code: dict
           Custom code which will be executed when the widget value
           changes.
+        bidirectional: boolean
+          Whether to link source and target bi-directionally
         **links: dict
           A mapping between properties on the source model and the
           target model property to link it to.
@@ -857,10 +926,13 @@ class Reactive(Viewable):
         elif not links and not code:
             raise ValueError('Declare parameters to link or a set of '
                              'callbacks, neither was defined.')
+        if args is None:
+            args = {}
 
-        from .links import GenericLink
+        from .links import Link
         if isinstance(target, Reactive):
             mapping = code or links
             for k, v in list(mapping.items()):
                 mapping[k] = target._rename.get(v, v)
-        return GenericLink(self, target, properties=links, code=code)
+        return Link(self, target, properties=links, code=code, args=args,
+                    bidirectional=bidirectional)

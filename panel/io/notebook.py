@@ -9,24 +9,28 @@ import os
 import uuid
 
 from contextlib import contextmanager
+from six import string_types
 
 import bokeh
 import bokeh.embed.notebook
 
 from bokeh.core.templates import DOC_NB_JS
 from bokeh.core.json_encoder import serialize_json
+from bokeh.core.templates import MACROS
 from bokeh.document import Document
 from bokeh.embed import server_document
-from bokeh.embed.elements import div_for_render_item
+from bokeh.embed.bundle import bundle_for_objs_and_resources
+from bokeh.embed.elements import div_for_render_item, script_for_render_items
 from bokeh.embed.util import standalone_docs_json_and_render_items
+from bokeh.embed.wrappers import wrap_in_script_tag
 from bokeh.models import CustomJS, LayoutDOM, Model
 from bokeh.resources import CDN, INLINE
-from bokeh.util.compiler import bundle_all_models
-from bokeh.util.string import encode_utf8
+from bokeh.util.string import encode_utf8, escape
+from bokeh.util.serialization import make_id
 from jinja2 import Environment, Markup, FileSystemLoader
 from pyviz_comms import (
     JS_CALLBACK, PYVIZ_PROXY, Comm, JupyterCommManager as _JupyterCommManager,
-    bokeh_msg_handler, nb_mime_js)
+    nb_mime_js)
 
 from ..compiler import require_components
 from .embed import embed_state
@@ -63,6 +67,39 @@ for (var event of events) {{
     events.pop(events.indexOf(event))
     return;
   }}
+}}
+"""
+
+# Following JS block becomes body of the message handler callback
+bokeh_msg_handler = """
+var plot_id = "{plot_id}";
+
+if ((plot_id in window.PyViz.plot_index) && (window.PyViz.plot_index[plot_id] != null)) {{
+  var plot = window.PyViz.plot_index[plot_id];
+}} else if ((Bokeh !== undefined) && (plot_id in Bokeh.index)) {{
+  var plot = Bokeh.index[plot_id];
+}}
+
+if (plot == null) {{
+  return
+}}
+
+if (plot_id in window.PyViz.receivers) {{
+  var receiver = window.PyViz.receivers[plot_id];
+}} else {{
+  var receiver = new Bokeh.protocol.Receiver();
+  window.PyViz.receivers[plot_id] = receiver;
+}}
+
+if ((buffers != undefined) && (buffers.length > 0)) {{
+  receiver.consume(buffers[0].buffer)
+}} else {{
+  receiver.consume(msg)
+}}
+
+const comm_msg = receiver.message;
+if ((comm_msg != null) && (Object.keys(comm_msg.content).length > 0)) {{
+  plot.model.document.apply_json_patch(comm_msg.content, comm_msg.buffers)
 }}
 """
 
@@ -109,20 +146,68 @@ def get_env():
 _env = get_env()
 _env.filters['json'] = lambda obj: Markup(json.dumps(obj))
 AUTOLOAD_NB_JS = _env.get_template("autoload_panel_js.js")
+NB_TEMPLATE_BASE = _env.get_template('nb_template.html')
 
-
-def _autoload_js(resources, custom_models_js, configs, requirements, exports, load_timeout=5000):
+def _autoload_js(bundle, configs, requirements, exports, load_timeout=5000):
     return AUTOLOAD_NB_JS.render(
-        js_urls   = resources.js_files,
-        css_urls  = resources.css_files,
-        js_raw    = resources.js_raw + [custom_models_js],
-        css_raw   = resources.css_raw_str,
+        bundle    = bundle,
         force     = True,
         timeout   = load_timeout,
         configs   = configs,
         requirements = requirements,
         exports   = exports
     )
+
+
+def html_for_render_items(comm_js, docs_json, render_items, template=None, template_variables={}):
+    comm_js = wrap_in_script_tag(comm_js)
+
+    json_id = make_id()
+    json = escape(serialize_json(docs_json), quote=False)
+    json = wrap_in_script_tag(json, "application/json", json_id)
+
+    script = wrap_in_script_tag(script_for_render_items(json_id, render_items))
+
+    context = template_variables.copy()
+
+    context.update(dict(
+        title = '',
+        bokeh_js = comm_js,
+        plot_script = json + script,
+        docs = render_items,
+        base = NB_TEMPLATE_BASE,
+        macros = MACROS,
+    ))
+
+    if len(render_items) == 1:
+        context["doc"] = context["docs"][0]
+        context["roots"] = context["doc"].roots
+
+    if template is None:
+        template = NB_TEMPLATE_BASE
+    elif isinstance(template, string_types):
+        template = _env.from_string("{% extends base %}\n" + template)
+
+    html = template.render(context)
+    return encode_utf8(html)
+
+
+def render_template(document, comm=None):
+    plot_id = document.roots[0].ref['id']
+    (docs_json, render_items) = standalone_docs_json_and_render_items(document)
+
+    if comm:
+        msg_handler = bokeh_msg_handler.format(plot_id=plot_id)
+        comm_js = comm.js_template.format(plot_id=plot_id, comm_id=comm.id, msg_handler=msg_handler)
+    else:
+        comm_js = ''
+
+    html = html_for_render_items(
+        comm_js, docs_json, render_items, template=document.template,
+        template_variables=document.template_variables)
+
+    return ({'text/html': html, EXEC_MIME: ''},
+            {EXEC_MIME: {'id': plot_id}})
 
 
 def render_model(model, comm=None):
@@ -199,14 +284,13 @@ def load_notebook(inline=True, load_timeout=5000):
     from IPython.display import publish_display_data
 
     resources = INLINE if inline else CDN
-    custom_models_js = bundle_all_models() or ""
-
+    bundle = bundle_for_objs_and_resources(None, resources)
     configs, requirements, exports = require_components()
-    bokeh_js = _autoload_js(resources, custom_models_js, configs,
-                            requirements, exports, load_timeout)
+
+    bokeh_js = _autoload_js(bundle, configs, requirements, exports, load_timeout)
     publish_display_data({
         'application/javascript': bokeh_js,
-        LOAD_MIME : bokeh_js
+        LOAD_MIME: bokeh_js,
     })
     bokeh.io.notebook.curstate().output_notebook()
 
@@ -291,3 +375,44 @@ def show_embed(panel, max_states=1000, max_opts=3, json=False,
         embed_state(panel, model, doc, max_states, max_opts,
                     json, save_path, load_path)
     publish_display_data(*render_model(model))
+
+
+def ipywidget(obj, **kwargs):
+    """
+    Creates a root model from the Panel object and wraps it in
+    a jupyter_bokeh ipywidget BokehModel.
+
+    Arguments
+    ---------
+    obj: object
+      Any Panel object or object which can be rendered with Panel
+    **kwargs: dict
+      Keyword arguments passed to the pn.panel utility function
+
+    Returns
+    -------
+    Returns an ipywidget model which renders the Panel object.
+    """
+    from jupyter_bokeh import BokehModel
+    from ..pane import panel
+    model = panel(obj, **kwargs).get_root()
+    widget = BokehModel(model)
+    if hasattr(widget, '_view_count'):
+        widget._view_count = 0
+        def view_count_changed(change, current=[model]):
+            new_model = None
+            if change['old'] > 0 and change['new'] == 0 and current:
+                obj._cleanup(current[0])
+                current[:] = []
+            elif (change['old'] == 0 and change['new'] > 0 and
+                  (not current or current[0] is not model)):
+                if current:
+                    try:
+                        obj._cleanup(current[0])
+                    except:
+                        pass
+                new_model = obj.get_root()
+                widget.update_from_model(new_model)
+                current[:] = [new_model]
+        widget.observe(view_count_changed, '_view_count')
+    return widget

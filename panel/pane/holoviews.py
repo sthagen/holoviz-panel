@@ -87,6 +87,8 @@ class HoloViews(PaneBase):
 
     @param.depends('center', 'widget_location', watch=True)
     def _update_layout(self):
+        from holoviews.core.options import Store
+
         loc = self.widget_location
         if not len(self.widget_box):
             widgets = []
@@ -103,13 +105,28 @@ class HoloViews(PaneBase):
         elif loc in ('left_bottom', 'right_bottom'):
             widgets = Column(VSpacer(), self.widget_box)
 
+        # Do not center if content is responsive
+        backend = self.backend or Store.current_backend
+        if self.object is None:
+            opts = {}
+        else:
+            try:
+                opts = Store.lookup_options(backend, self.object, 'plot').kwargs
+            except KeyError:
+                opts = {}
+        responsive_modes = ('stretch_width', 'stretch_both', 'scale_width', 'scale_both')
+        center = self.center
+        if ((opts.get('responsive') and not (opts.get('width') or opts.get('frame_width'))) or
+             opts.get('sizing_mode') in responsive_modes):
+            center = False
+
         self._widget_container = widgets
         if not widgets:
-            if self.center:
+            if center:
                 components = [HSpacer(), self, HSpacer()]
             else:
                 components = [self]
-        elif self.center:
+        elif center:
             if loc.startswith('left'):
                 components = [widgets, HSpacer(), self, HSpacer()]
             elif loc.startswith('right'):
@@ -181,7 +198,10 @@ class HoloViews(PaneBase):
                 if plot.comm and 'embedded' not in plot.root.tags:
                     plot.push()
             else:
-                plot.document.add_next_tick_callback(partial(plot.update, key))
+                if plot.document.session_context:
+                    plot.document.add_next_tick_callback(partial(plot.update, key))
+                else:
+                    plot.update(key)
         else:
             plot.update(key)
             if hasattr(plot.renderer, 'get_plot_state'):
@@ -280,7 +300,7 @@ class HoloViews(PaneBase):
         return isinstance(obj, Dimensioned) or isinstance(obj, Plot)
 
     @classmethod
-    def widgets_from_dimensions(cls, object, widget_types={}, widgets_type='individual'):
+    def widgets_from_dimensions(cls, object, widget_types=None, widgets_type='individual'):
         from holoviews.core import Dimension, DynamicMap
         from holoviews.core.options import SkipRendering
         from holoviews.core.util import isnumeric, unicode, datetime_types, unique_iterator
@@ -288,6 +308,9 @@ class HoloViews(PaneBase):
         from holoviews.plotting.plot import Plot, GenericCompositePlot
         from holoviews.plotting.util import get_dynamic_mode
         from ..widgets import Widget, DiscreteSlider, Select, FloatSlider, DatetimeInput, IntSlider
+
+        if widget_types is None:
+            widget_types = {}
 
         if isinstance(object, GenericCompositePlot):
             object = object.layout
@@ -341,6 +364,9 @@ class HoloViews(PaneBase):
             elif dim.name in widget_types:
                 widget = widget_types[dim.name]
                 if isinstance(widget, Widget):
+                    widget.set_param(**kwargs)
+                    if not widget.name:
+                        widget.name = dim.label
                     widgets.append(widget)
                     continue
                 elif isinstance(widget, dict):
