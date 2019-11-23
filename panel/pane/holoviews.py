@@ -87,7 +87,8 @@ class HoloViews(PaneBase):
 
     @param.depends('center', 'widget_location', watch=True)
     def _update_layout(self):
-        from holoviews.core.options import Store
+        from holoviews.core import DynamicMap, Store
+        from holoviews.plotting.util import initialize_dynamic
 
         loc = self.widget_location
         if not len(self.widget_box):
@@ -110,9 +111,11 @@ class HoloViews(PaneBase):
         if self.object is None:
             opts = {}
         else:
+            initialize_dynamic(self.object)
+            obj = self.object.last if isinstance(self.object, DynamicMap) else self.object
             try:
-                opts = Store.lookup_options(backend, self.object, 'plot').kwargs
-            except KeyError:
+                opts = Store.lookup_options(backend, obj, 'plot').kwargs
+            except:
                 opts = {}
         responsive_modes = ('stretch_width', 'stretch_both', 'scale_width', 'scale_both')
         center = self.center
@@ -520,7 +523,8 @@ def link_axes(root_view, root_model):
         if ref not in pane._plots:
             continue
         plot = pane._plots[ref][0]
-        if not pane.linked_axes or plot.renderer.backend != 'bokeh':
+        if (not pane.linked_axes or plot.renderer.backend != 'bokeh'
+            or not getattr(plot, 'shared_axes', False)):
             continue
         for p in plot.traverse(specs=[ElementPlot]):
             if p.current_frame is None:
