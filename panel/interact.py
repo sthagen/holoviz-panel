@@ -182,8 +182,10 @@ class interactive(PaneBase):
                 pane_type = self.get_pane_type(new_object)
                 if type(self._pane) is pane_type:
                     if isinstance(new_object, (PaneBase, Panel)):
-                        new_params = {k: v for k, v in new_object.get_param_values()
-                                      if k != 'name'}
+                        new_params = {
+                            k: v for k, v in new_object.param.get_param_values()
+                            if k != 'name'
+                        }
                         self._pane.set_param(**new_params)
                     else:
                         self._pane.object = new_object

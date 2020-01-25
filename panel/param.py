@@ -29,13 +29,13 @@ from .util import (
 from .viewable import Layoutable
 from .widgets import (
     Button, Checkbox, ColorPicker, DataFrame, DatetimeInput, DateRangeSlider,
-    FloatSlider, IntSlider, LiteralInput, MultiSelect, RangeSlider,
-    Select, StaticText, TextInput, Toggle, Widget
+    FileSelector, FloatSlider, IntSlider, LiteralInput, MultiSelect,
+    RangeSlider, Select, StaticText, TextInput, Toggle, Widget
 )
 from .widgets.button import _ButtonBase
 
 
-def FileSelector(pobj):
+def SingleFileSelector(pobj):
     """
     Determines whether to use a TextInput or Select widget for FileSelector
     """
@@ -104,22 +104,26 @@ class Param(PaneBase):
     _unpack = True
 
     _mapping = {
-        param.Action:         Button,
-        param.Boolean:        Checkbox,
-        param.Color:          ColorPicker,
-        param.Date:           DatetimeInput,
-        param.DateRange:      DateRangeSlider,
-        param.DataFrame:      DataFrame,
-        param.Dict:           LiteralInput,
-        param.FileSelector:   FileSelector,
-        param.Integer:        IntSlider,
-        param.ListSelector:   MultiSelect,
-        param.Number:         FloatSlider,
-        param.ObjectSelector: Select,
-        param.Parameter:      LiteralInput,
-        param.Range:          RangeSlider,
-        param.Selector:       Select,
-        param.String:         TextInput,
+        param.Action:            Button,
+        param.Boolean:           Checkbox,
+        param.Color:             ColorPicker,
+        param.Date:              DatetimeInput,
+        param.DateRange:         DateRangeSlider,
+        param.CalendarDateRange: DateRangeSlider,
+        param.DataFrame:         DataFrame,
+        param.Dict:              LiteralInput,
+        param.FileSelector:      SingleFileSelector,
+        param.Filename:          TextInput,
+        param.Foldername:        TextInput,
+        param.Integer:           IntSlider,
+        param.MultiFileSelector: FileSelector,
+        param.ListSelector:      MultiSelect,
+        param.Number:            FloatSlider,
+        param.ObjectSelector:    Select,
+        param.Parameter:         LiteralInput,
+        param.Range:             RangeSlider,
+        param.Selector:          Select,
+        param.String:            TextInput,
     }
 
     _rerender_params = []
@@ -138,7 +142,7 @@ class Param(PaneBase):
         self._updating = []
 
         # Construct Layout
-        kwargs = {p: v for p, v in self.get_param_values() if p in Layoutable.param}
+        kwargs = {p: v for p, v in self.param.get_param_values() if p in Layoutable.param}
         self._widget_box = self.default_layout(**kwargs)
 
         layout = self.expand_layout
@@ -164,7 +168,7 @@ class Param(PaneBase):
         params = [] if self.object is None else list(self.object.param)
         parameters = [k for k in params if k != 'name']
         params = []
-        for p, v in sorted(self.get_param_values()):
+        for p, v in sorted(self.param.get_param_values()):
             if v is self.param[p].default: continue
             elif v is None: continue
             elif isinstance(v, string_types) and v == '': continue
@@ -245,7 +249,7 @@ class Param(PaneBase):
                         if e not in existing
                     ]
                 elif change.new:
-                    kwargs = {k: v for k, v in self.get_param_values()
+                    kwargs = {k: v for k, v in self.param.get_param_values()
                               if k not in ['name', 'object', 'parameters']}
                     pane = Param(parameterized, name=parameterized.name,
                                  **kwargs)
@@ -266,7 +270,7 @@ class Param(PaneBase):
                     return
                 elif is_parameterized(change.new):
                     parameterized = change.new
-                    kwargs = {k: v for k, v in self.get_param_values()
+                    kwargs = {k: v for k, v in self.param.get_param_values()
                               if k not in ['name', 'object', 'parameters']}
                     pane = Param(parameterized, name=parameterized.name,
                                  **kwargs)
@@ -307,10 +311,10 @@ class Param(PaneBase):
         else:
             label = p_obj.label
         kw = dict(value=value, disabled=p_obj.constant, name=label)
-        
+
         # Update kwargs
         kw.update(kw_widget)
-        
+
         if hasattr(p_obj, 'get_range'):
             options = p_obj.get_range()
             if not options and value is not None:
@@ -328,7 +332,7 @@ class Param(PaneBase):
                 kw['step'] = p_obj.step
 
         kwargs = {k: v for k, v in kw.items() if k in widget_class.param}
-        
+
         if isinstance(widget_class, Widget):
             widget = widget_class
         else:
@@ -343,7 +347,7 @@ class Param(PaneBase):
                     return
                 try:
                     self._updating.append(p_name)
-                    self.object.set_param(**{p_name: change.new})
+                    self.object.param.set_param(**{p_name: change.new})
                 finally:
                     self._updating.remove(p_name)
 
@@ -396,7 +400,7 @@ class Param(PaneBase):
 
                 try:
                     self._updating.append(p_name)
-                    widget.set_param(**updates)
+                    widget.param.set_param(**updates)
                 finally:
                     self._updating.remove(p_name)
 
@@ -690,6 +694,6 @@ class JSONInit(param.Parameterized):
 
         for name, value in params.items():
            try:
-               parameterized.set_param(**{name:value})
+               parameterized.param.set_param(**{name:value})
            except ValueError as e:
                warnobj.warning(str(e))

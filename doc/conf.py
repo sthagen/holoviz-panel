@@ -81,6 +81,7 @@ _NAV = (
     ('Gallery', 'gallery/index'),
     ('Reference Gallery', 'reference/index'),
     ('Developer Guide', 'developer_guide/index'),
+    ('Releases', 'releases'),
     ('FAQ', 'FAQ'),
     ('About', 'about')
 )
@@ -88,6 +89,7 @@ _NAV = (
 templates_path = ['_templates']
 
 html_context.update({
+    'js_includes': ['nbsite.js'],
     'PROJECT': project,
     'DESCRIPTION': description,
     'AUTHOR': authors,

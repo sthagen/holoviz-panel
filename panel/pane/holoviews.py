@@ -229,7 +229,8 @@ class HoloViews(PaneBase):
                 state = plot.state
 
             # Ensure rerender if content is responsive but layout is centered
-            if (self.center and state.sizing_mode not in ('fixed', None)
+            if (backend == 'bokeh' and self.center and
+                state.sizing_mode not in ('fixed', None)
                 and not self._responsive_content):
                 self._responsive_content = True
                 self._update_layout()
@@ -238,7 +239,7 @@ class HoloViews(PaneBase):
             else:
                 self._responsive_content = False
 
-            kwargs = {p: v for p, v in self.get_param_values()
+            kwargs = {p: v for p, v in self.param.get_param_values()
                       if p in Layoutable.param and p != 'name'}
             child_pane = self._panes.get(backend, Pane)(state, **kwargs)
             self._update_plot(plot, child_pane)
@@ -367,7 +368,7 @@ class HoloViews(PaneBase):
             elif dim.name in widget_types:
                 widget = widget_types[dim.name]
                 if isinstance(widget, Widget):
-                    widget.set_param(**kwargs)
+                    widget.param.set_param(**kwargs)
                     if not widget.name:
                         widget.name = dim.label
                     widgets.append(widget)
@@ -534,11 +535,11 @@ def link_axes(root_view, root_model):
 
             fig = p.state
             if fig.x_range.tags:
-                range_map[(fig.x_range.tags[0], plot.root.ref['id'])].append((fig, p, fig.xaxis[0], fig.x_range))
+                range_map[fig.x_range.tags[0]].append((fig, p, fig.xaxis[0], fig.x_range))
             if fig.y_range.tags:
-                range_map[(fig.y_range.tags[0], plot.root.ref['id'])].append((fig, p, fig.yaxis[0], fig.y_range))
+                range_map[fig.y_range.tags[0]].append((fig, p, fig.yaxis[0], fig.y_range))
 
-    for (tag, _), axes in range_map.items():
+    for (tag), axes in range_map.items():
         fig, p, ax, axis = axes[0]
         for fig, p, pax, _ in axes[1:]:
             changed = []

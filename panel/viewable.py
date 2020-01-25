@@ -9,6 +9,8 @@ import logging
 import re
 import sys
 import threading
+import traceback
+import uuid
 
 from functools import partial
 
@@ -31,7 +33,7 @@ from .io.notebook import (
 from .io.save import save
 from .io.state import state
 from .io.server import StoppableThread, get_server, unlocked
-from .util import param_reprs
+from .util import escape, param_reprs
 
 
 class Layoutable(param.Parameterized):
@@ -186,6 +188,8 @@ class Layoutable(param.Parameterized):
     def __init__(self, **params):
         if (params.get('width', None) is not None and
             params.get('height', None) is not None and
+            params.get('width_policy') is None and
+            params.get('height_policy') is None and
             'sizing_mode' not in params):
             params['sizing_mode'] = 'fixed'
         elif not self.param.sizing_mode.constant and not self.param.sizing_mode.readonly:
@@ -321,15 +325,17 @@ class Viewable(Layoutable, ServableMixin):
         """
         raise NotImplementedError
 
-    def _cleanup(self, model):
+    def _cleanup(self, root):
         """
         Clean up method which is called when a Viewable is destroyed.
 
         Arguments
         ---------
-        model: bokeh.model.Model
+        root: bokeh.model.Model
           Bokeh model for the view being cleaned up
         """
+        if root.ref['id'] in state._handles:
+            del state._handles[root.ref['id']]
 
     def _preprocess(self, root):
         """
@@ -382,13 +388,22 @@ class Viewable(Layoutable, ServableMixin):
             return None
 
         try:
-            assert get_ipython().kernel is not None # noqa
+            from IPython import get_ipython
+            assert get_ipython().kernel is not None
             state._comm_manager = JupyterCommManager
         except:
             pass
+
+        from IPython.display import display
+
         comm = state._comm_manager.get_server_comm()
         doc = _Document()
         model = self._render_model(doc, comm)
+
+        if config.debug != 'disable':
+            handle = display(display_id=uuid.uuid4().hex)
+            state._handles[model.ref['id']] = (handle, [])
+
         if config.embed:
             return render_model(model)
         return render_mimebundle(model, doc, comm)
@@ -595,6 +610,10 @@ class Reactive(Viewable):
     # Mapping from parameter name to bokeh model property name
     _rename = {}
 
+    # Allows defining a mapping from model property name to a JS code
+    # snippet that transforms the object before serialization
+    _js_transforms = {}
+
     def __init__(self, **params):
         # temporary flag denotes panes created for temporary, internal
         # use which should be garbage collected once they have been used
@@ -603,6 +622,7 @@ class Reactive(Viewable):
         self._events = {}
         self._changing = {}
         self._callbacks = []
+        self._links = []
         self._link_params()
 
     #----------------------------------------------------------------
@@ -670,25 +690,54 @@ class Reactive(Viewable):
             watcher = self.param.watch(param_change, params)
             self._callbacks.append(watcher)
 
+    def _on_error(self, ref, error):
+        if ref not in state._handles or config.debug in [None, 'disable']:
+            return
+        handle, accumulator = state._handles[ref]
+        formatted = '\n<pre>'+escape(traceback.format_exc())+'</pre>\n'
+        if config.debug == 'accumulate':
+            accumulator.append(formatted)
+        elif config.debug == 'replace':
+            accumulator[:] = [formatted]
+        if accumulator:
+            handle.update({'text/html': '\n'.join(accumulator)}, raw=True)
+
+    def _on_stdout(self, ref, stdout):
+        if ref not in state._handles or config.debug is [None, 'disable']:
+            return
+        handle, accumulator = state._handles[ref]
+        formatted = ["%s</br>" % o for o in stdout]
+        if config.debug == 'accumulate':
+            accumulator.extend(formatted)
+        elif config.debug == 'replace':
+            accumulator[:] = formatted
+        if accumulator:
+            handle.update({'text/html': '\n'.join(accumulator)}, raw=True)
+
     def _link_props(self, model, properties, doc, root, comm=None):
+        ref = root.ref['id']
         if comm is None:
             for p in properties:
                 if isinstance(p, tuple):
                     _, p = p
-                model.on_change(p, partial(self._server_change, doc))
+                model.on_change(p, partial(self._server_change, doc, ref))
         elif config.embed:
             pass
         else:
-            client_comm = state._comm_manager.get_client_comm(on_msg=self._comm_change)
+            on_msg = partial(self._comm_change, ref=ref)
+            client_comm = state._comm_manager.get_client_comm(
+                on_msg=on_msg, on_error=partial(self._on_error, ref),
+                on_stdout=partial(self._on_stdout, ref)
+            )
             for p in properties:
                 if isinstance(p, tuple):
                     p, attr = p
                 else:
                     p, attr = p, p
-                customjs = self._get_customjs(attr, client_comm, root.ref['id'])
+                customjs = self._get_customjs(attr, client_comm, ref)
                 model.js_on_change(p, customjs)
 
-    def _comm_change(self, msg):
+    def _comm_change(self, msg, ref=None):
         if not msg:
             return
         self._changing.update(msg)
@@ -699,7 +748,7 @@ class Reactive(Viewable):
         finally:
             self._changing = {}
 
-    def _server_change(self, doc, attr, old, new):
+    def _server_change(self, doc, ref, attr, old, new):
         self._events.update({attr: new})
         if not self._processing:
             self._processing = True
@@ -709,7 +758,7 @@ class Reactive(Viewable):
                 self._change_event(doc)
 
     def _process_events(self, events):
-        self.set_param(**self._process_property_change(events))
+        self.param.set_param(**self._process_property_change(events))
 
     def _change_event(self, doc=None):
         try:
@@ -730,8 +779,10 @@ class Reactive(Viewable):
         Returns a CustomJS callback that can be attached to send the
         model state across the notebook comms.
         """
-        return get_comm_customjs(change, client_comm, plot_id,
-                                 self._timeout, self._debounce)
+        transform = self._js_transforms.get(change)
+        return get_comm_customjs(
+            change, client_comm, plot_id, transform, self._timeout, self._debounce
+        )
 
     #----------------------------------------------------------------
     # Model API
@@ -840,7 +891,7 @@ class Reactive(Viewable):
                     _updating.pop(_updating.index(event.name))
         params = list(callbacks) if callbacks else list(links)
         cb = self.param.watch(link, params)
-        self._callbacks.append(cb)
+        self._links.append(cb)
         return cb
 
     def add_periodic_callback(self, callback, period=500, count=None,

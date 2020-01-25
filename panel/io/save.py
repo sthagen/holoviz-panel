@@ -81,6 +81,11 @@ def save(panel, filename, title=None, resources=None, template=None,
     load_path: str (default=None)
       The path or URL the json files will be loaded from.
     """
+    from ..pane import PaneBase
+
+    if isinstance(panel, PaneBase) and len(panel.layout) > 1:
+        panel = panel.layout
+
     doc = Document()
     comm = Comm()
     with config.set(embed=embed):
