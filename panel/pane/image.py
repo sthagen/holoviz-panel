@@ -42,9 +42,9 @@ class ImageBase(DivPaneBase):
 
     imgtype = 'None'
 
-    _rerender_params = [
-        'alt_text', 'link_url', 'object', 'sizing_mode', 'style'
-    ]
+    _rerender_params = ['alt_text', 'link_url', 'embed', 'object', 'style']
+
+    _target_transforms = {'object': """'<img src="' + value + '"></img>'"""}
 
     __abstract = True
 
@@ -114,7 +114,7 @@ class ImageBase(DivPaneBase):
             w, h = '%spx' % width, '%spx' % height
         elif smode == 'stretch_both':
             w, h = '100%', '100%'
-        elif smode == 'stretch_height':
+        elif smode == 'stretch_width':
             w, h = '%spx' % width, '100%'
         elif smode == 'stretch_height':
             w, h = '100%', '%spx' % height

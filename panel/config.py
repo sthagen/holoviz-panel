@@ -6,6 +6,7 @@ components.
 from __future__ import absolute_import, division, unicode_literals
 
 import glob
+import inspect
 import os
 import sys
 
@@ -54,6 +55,10 @@ class _config(param.Parameterized):
         os.environ['PANEL_EMBED'] = 'True'
     """
 
+    apply_signatures = param.Boolean(default=True, doc="""
+        Whether to set custom Signature which allows tab-completion
+        in some IDEs and environments.""")
+
     css_files = param.List(default=_CSS_FILES, doc="""
         External CSS files to load.""")
 
@@ -63,6 +68,11 @@ class _config(param.Parameterized):
 
     raw_css = param.List(default=[], doc="""
         List of raw CSS strings to add to load.""")
+
+    safe_embed = param.Boolean(default=False, doc="""
+        Ensure all bokeh property changes trigger events which are
+        embedded. Useful when only partial updates are made in an
+        app, e.g. when working with HoloViews.""")
 
     sizing_mode = param.ObjectSelector(default=None, objects=[
         'fixed', 'stretch_width', 'stretch_height', 'stretch_both',
@@ -74,8 +84,9 @@ class _config(param.Parameterized):
         Whether to render output in Jupyter with the default Jupyter
         extension or use the jupyter_bokeh ipywidget model.""")
 
-    _debug = param.ObjectSelector(default='accumulate', allow_None=True,
-                                 objects=['accumulate', 'replace', 'disable'], doc="""
+    _console_output = param.ObjectSelector(default='accumulate', allow_None=True,
+                                 objects=['accumulate', 'replace', 'disable',
+                                          False], doc="""
         How to log errors and stdout output triggered by callbacks
         from Javascript in the notebook.""")
 
@@ -120,18 +131,22 @@ class _config(param.Parameterized):
                 setattr(self, k+'_', v)
 
     @property
-    def debug(self):
-        if self._debug_ is not None:
-            return self._debug_
-        elif os.environ.get('PANEL_DOC_BUILD'):
+    def _doc_build(self):
+        return os.environ.get('PANEL_DOC_BUILD')
+
+    @property
+    def console_output(self):
+        if self._console_output_ is not None:
+            return 'disable' if not self._console_output_ else self._console_output_
+        elif self._doc_build:
             return 'disable'
         else:
-            return os.environ.get('PANEL_DEBUG', _config._debug)
+            return os.environ.get('PANEL_CONSOLE_OUTPUT', _config._console_output)
 
-    @debug.setter
-    def debug(self, value):
-        validate_config(self, '_debug', value)
-        self._debug_ = value
+    @console_output.setter
+    def console_output(self, value):
+        validate_config(self, '_console_output', value)
+        self._console_output_ = value
 
     @property
     def embed(self):
@@ -156,7 +171,7 @@ class _config(param.Parameterized):
     def comms(self, value):
         validate_config(self, '_comms', value)
         self._comms_ = value
-        
+
     @property
     def embed_json(self):
         if self._embed_json_ is not None:
@@ -238,6 +253,7 @@ class panel_extension(_pyviz_extension):
     _imports = {'katex': 'panel.models.katex',
                 'mathjax': 'panel.models.mathjax',
                 'plotly': 'panel.models.plotly',
+                'deckgl': 'panel.models.deckgl',
                 'vega': 'panel.models.vega',
                 'vtk': 'panel.models.vtk',
                 'ace': 'panel.models.ace'}
@@ -263,12 +279,24 @@ class panel_extension(_pyviz_extension):
             else:
                 setattr(config, k, v)
 
+        if config.apply_signatures and sys.version_info.major >= 3:
+            self._apply_signatures()
+
+        if 'holoviews' in sys.modules:
+            import holoviews as hv
+            import holoviews.plotting.bokeh # noqa
+            if not hv.extension._loaded:
+                if hasattr(hv.Store, 'set_current_backend'):
+                    hv.Store.set_current_backend('bokeh')
+                else:
+                    hv.Store.current_backend = 'bokeh'
+
         try:
             ip = params.pop('ip', None) or get_ipython() # noqa (get_ipython)
-        except:
+        except Exception:
             return
 
-        if hasattr(ip, 'kernel') and not self._loaded and not os.environ.get("PANEL_DOC_BUILD"):
+        if hasattr(ip, 'kernel') and not self._loaded and not config._doc_build:
             # TODO: JLab extension and pyviz_comms should be changed
             #       to allow multiple cleanup comms to be registered
             _JupyterCommManager.get_client_comm(self._process_comm_msg,
@@ -277,23 +305,52 @@ class panel_extension(_pyviz_extension):
 
         nb_load = False
         if 'holoviews' in sys.modules:
-            import holoviews as hv
             if hv.extension._loaded:
                 return
-            import holoviews.plotting.bokeh # noqa
-
             with param.logging_level('ERROR'):
                 hv.plotting.Renderer.load_nb(config.inline)
-                nb_load = True
-
-            if hasattr(hv.Store, 'set_current_backend'):
-                hv.Store.set_current_backend('bokeh')
-            else:
-                hv.Store.current_backend = 'bokeh'
+                if hasattr(hv.plotting.Renderer, '_render_with_panel'):
+                    nb_load = True
 
         if not nb_load and hasattr(ip, 'kernel'):
             load_notebook(config.inline)
         panel_extension._loaded = True
+
+
+    def _apply_signatures(self):
+        from inspect import Parameter, Signature
+        from .viewable import Viewable
+
+        descendants = param.concrete_descendents(Viewable)
+        for cls in reversed(list(descendants.values())):
+            if cls.__doc__.startswith('params'):
+                prefix = cls.__doc__.split('\n')[0]
+                cls.__doc__ = cls.__doc__.replace(prefix, '')
+            sig = inspect.signature(cls.__init__)
+            sig_params = list(sig.parameters.values())
+            if not sig_params or sig_params[-1] != Parameter('params', Parameter.VAR_KEYWORD):
+                continue
+            parameters = sig_params[:-1]
+
+            processed_kws, keyword_groups = set(), []
+            for cls in reversed(cls.mro()):
+                keyword_group = []
+                for (k, v) in sorted(cls.__dict__.items()):
+                    if (isinstance(v, param.Parameter) and k not in processed_kws
+                        and not v.readonly):
+                        keyword_group.append(k)
+                        processed_kws.add(k)
+                keyword_groups.append(keyword_group)
+
+            parameters += [
+                Parameter(name, Parameter.KEYWORD_ONLY)
+                for kws in reversed(keyword_groups) for name in kws
+                if name not in sig.parameters
+            ]
+            parameters.append(Parameter('kwargs', Parameter.VAR_KEYWORD))
+            cls.__init__.__signature__ = Signature(
+                parameters, return_annotation=sig.return_annotation
+            )
 
 
 #---------------------------------------------------------------------
