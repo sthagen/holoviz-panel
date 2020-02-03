@@ -90,7 +90,7 @@ except Exception:
 
 install_requires = [
     'bokeh >=1.4.0,<2.0',
-    'param >=1.9.0',
+    'param >=1.9.2',
     'pyviz_comms >=0.7.3',
     'markdown',
     'tqdm',
@@ -145,7 +145,7 @@ extras_require['all'] = sorted(set(sum(extras_require.values(), [])))
 # non-python dependencies). Note that setup_requires isn't used
 # because it doesn't work well with pip.
 extras_require['build'] = [
-    'param >=1.9.0',
+    'param >=1.9.2',
     'pyct >=0.4.4',
     'setuptools >=30.3.0',
     'bokeh >=1.4.0',
