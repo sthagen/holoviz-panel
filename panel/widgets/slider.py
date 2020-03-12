@@ -11,6 +11,7 @@ import param
 import numpy as np
 
 from bokeh.models import CustomJS
+from bokeh.models.formatters import TickFormatter
 from bokeh.models.widgets import (
     DateSlider as _BkDateSlider, DateRangeSlider as _BkDateRangeSlider,
     RangeSlider as _BkRangeSlider, Slider as _BkSlider)
@@ -24,22 +25,11 @@ from ..layout import Column
 from .input import StaticText
 
 
+
 class _SliderBase(Widget):
 
     bar_color = param.Color(default="#e6e6e6", doc="""
         Color of the slider bar as a hexidecimal RGB value.""")
-
-    callback_policy = param.ObjectSelector(
-        default='continuous', objects=['continuous', 'throttle', 'mouseup'], doc="""
-        DEPRECATED: Policy to determine when slider events are triggered:
-
-        * "continuous": the callback will be executed immediately for each movement of the slider
-        * "throttle": the callback will be executed at most every ``callback_throttle`` milliseconds.
-        * "mouseup": the callback will be executed only once when the slider is released.
-        """)
-
-    callback_throttle = param.Integer(default=200, doc="""
-        Number of milliseconds to pause between callback calls as the slider is moved.""")
 
     direction = param.ObjectSelector(default='ltr', objects=['ltr', 'rtl'],
                                      doc="""
@@ -61,6 +51,9 @@ class _SliderBase(Widget):
 
 
 class ContinuousSlider(_SliderBase):
+
+    format = param.ClassSelector(class_=string_types+(TickFormatter,), doc="""
+        Allows defining a custom format string or bokeh TickFormatter.""")
 
     _supports_embed = True
 
@@ -201,7 +194,9 @@ class DiscreteSlider(CompositeWidget, _SliderBase):
 
         self._text = StaticText(margin=(5, 0, 0, 5), style={'white-space': 'nowrap'})
         self._slider = None
-        self._composite = Column(self._text, self._slider)
+        layout = {p: getattr(self, p) for p in Layoutable.param
+                  if getattr(self, p) is not None}
+        self._composite = Column(self._text, self._slider, **layout)
         self._update_options()
         self.param.watch(self._update_options, ['options', 'formatter'])
         self.param.watch(self._update_value, ['value'])
@@ -286,6 +281,9 @@ class DiscreteSlider(CompositeWidget, _SliderBase):
 
 
 class RangeSlider(_SliderBase):
+
+    format = param.ClassSelector(class_=string_types+(TickFormatter,), doc="""
+        Allows defining a custom format string or bokeh TickFormatter.""")
 
     value = param.NumericTuple(default=(0, 1), length=2)
 
