@@ -90,7 +90,7 @@ except Exception:
 
 install_requires = [
     'bokeh >=2.0.0',
-    'param >=1.9.2',
+    'param >=1.9.3',
     'pyviz_comms >=0.7.4',
     'markdown',
     'tqdm',
@@ -99,7 +99,7 @@ install_requires = [
 
 _recommended = [
     'notebook >=5.4',
-    'holoviews >=1.13.0b2',
+    'holoviews >=1.13.2',
     'matplotlib',
     'pillow',
     'plotly'
@@ -112,7 +112,8 @@ _tests = [
     'scipy',
     'nbsmoke >=0.2.0',
     'pytest-cov',
-    'codecov'
+    'codecov',
+    'folium',
 ]
 
 extras_require = {
@@ -136,6 +137,7 @@ extras_require = {
         'sphinx_holoviz_theme',
         'selenium',
         'phantomjs',
+        'graphviz',
         'lxml',
     ]
 }
@@ -176,10 +178,10 @@ setup_args = dict(
     classifiers=[
         "License :: OSI Approved :: BSD License",
         "Development Status :: 5 - Production/Stable",
-        "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Operating System :: OS Independent",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
@@ -196,7 +198,7 @@ setup_args = dict(
         "Topic :: Office/Business",
         "Topic :: Office/Business :: Financial",
         "Topic :: Software Development :: Libraries"],
-    python_requires=">=2.7",
+    python_requires=">=3.6",
     entry_points={
         'console_scripts': [
             'panel = panel.cli:main'

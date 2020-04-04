@@ -1,6 +1,78 @@
 Releases
 ========
 
+Version 0.9.5
+-------------
+
+Date: 2020-04-03
+
+This release primarily focuses on improvements and additions to the documentation. Many thanks to @MarcSkovMadsen, @philippjfr and @michaelaye for contributing to this release.
+
+Enhancements:
+
+- Add `Template.save` with ability to save to HTML and PNG but not embed (`#1224 <https://github.com/holoviz/panel/pull/1224>`_)
+
+Bug fixes:
+
+- Fixed formatting of datetimes in `DataFrame` widget (`#1221 <https://github.com/holoviz/panel/pull/1221>`_)
+- Add `panel/models/vtk/` subpackage to MANIFEST to ensure it is shipped with packages 
+
+Documentation:
+
+- Add guidance about developing custom models (`#1220 <https://github.com/holoviz/panel/pull/1220>`_)
+- Add Folium example to gallery (`#1189 <https://github.com/holoviz/panel/pull/1189>`_))
+- Add `FileDownload` and `FileInput` example to gallery (`#1193 <https://github.com/holoviz/panel/pull/1193>`_))
+
+
+Version 0.9.4
+-------------
+
+Date: 2020-04-01
+
+This is a minor release fixing a number of regressions and compatibility issues which continue to crop up due to the upgrade to Bokeh 2.0 Additionally this release completely overhauls how communication in notebook environments are handled, eliminating the need to register custom callbacks with inlined JS callbacks to sync properties. Many thanks to the contributors to this release including @hyamanieu, @maximlt, @mattpap and the maintainer @philippjfr.
+
+Enhancements:
+
+- Switch to using CommManager in notebook hugely simplifying comms in notebooks and reducing the amount of inlined Javascript (`#1171 <https://github.com/holoviz/panel/pull/1171>`_)
+- Add ability to serve Flask apps directly using pn.serve (`#1215 <https://github.com/holoviz/panel/pull/1215>`_) 
+
+Bug fixes:
+
+- Fix bug in Template which caused all roots to instantiate two models for each component (`#1216 <https://github.com/holoviz/panel/pull/1216>`_)
+- Fixed bug with Bokeh 2.0 DataPicker datetime format (`#1187 <https://github.com/holoviz/panel/pull/1187>`_)
+- Publish Panel.js to CDN to allow static HTML exports with CDN resources to work (`#1190 <https://github.com/holoviz/panel/pull/1190>`_)
+- Handle bug in rendering Vega models with singular dataset (`#1201 <https://github.com/holoviz/panel/pull/1201>`_)
+- Removed escaping workaround for HTML models resulting in broken static exports (`#1206 <https://github.com/holoviz/panel/pull/1206>`_)
+- Fixed bug closing Tabs (`#1208 <https://github.com/holoviz/panel/pull/1208>`_)
+- Embed Panel logo in server index.html (`#1209 <https://github.com/holoviz/panel/pull/1209>`_)
+
+Compatibility:
+
+- This release adds compatibility with Bokeh 2.0.1 which caused a regression in loading custom models
+
+Version 0.9.3
+-------------
+
+Date: 2020-03-21
+
+This is a minor release fixing an issue with recent versions of Tornado. It also fixes issue with the packages built on the PyViz conda channel.
+
+- Respect write-locks on synchronous Websocket events (`#1170 <https://github.com/holoviz/panel/pull/1170>`_)
+
+Version 0.9.2
+-------------
+
+Date: 2020-03-19
+
+This is a minor release with a number of bug fixes. Many thanks to @ceball, @Guillemdb and @philippjfr for contributing these fixes.
+
+Bug fixes:
+
+- Fix regression in DiscreteSlider layout (`#1163 <https://github.com/holoviz/panel/pull/1163>`_)
+- Fix for saving as PNG which regressed due to changes in bokeh 2.0 (`#1165 <https://github.com/holoviz/panel/pull/1165>`_)
+- Allow pn.serve to resolve Template instances returned by a function (`#1167 <https://github.com/holoviz/panel/pull/1167>`_)
+- Ensure Template can render empty HoloViews pane (`#1168 <https://github.com/holoviz/panel/pull/1168>`_)
+
 Version 0.9.1
 -------------
 
@@ -81,7 +153,7 @@ Minor Enhancements:
 - Fixed HoloViews axis linking across `Template` roots (`#980 <https://github.com/holoviz/panel/issues/980>`_) [@philippjfr]
 - Merge FactorRange when linking HoloViews axes (`#968 <https://github.com/holoviz/panel/issues/968>`_) [@philippjfr]
 - Expose title and other kwargs on `.show()` (`#962 <https://github.com/holoviz/panel/issues/962>`_) [@philippjfr]
-- Let `FileInput` widget set filename (`#956 <https://github.com/holoviz/panel/issues/956.`_) [Leopold Talirz]
+- Let `FileInput` widget set filename (`#956 <https://github.com/holoviz/panel/issues/956>`_) [Leopold Talirz]
 - Expose further bokeh CLI commands and added help (`#951 <https://github.com/holoviz/panel/issues/951>`_) [@philippjfr]
 - Enable responsive sizing for `Vega`/altair pane (`#949 <https://github.com/holoviz/panel/issues/949>`_) [@philippjfr]
 - Added encode parameter to `SVG` pane (`#913 <https://github.com/holoviz/panel/issues/913>`_) [@philippjfr]
@@ -276,7 +348,7 @@ Major new features:
 * Added VTK 3D object pane (`#312 <https://github.com/holoviz/panel/issues/312>`_, `#337 <https://github.com/holoviz/panel/issues/337>`_, `#349 <https://github.com/holoviz/panel/issues/349>`_, `#355 <https://github.com/holoviz/panel/issues/355>`_, `#363 <https://github.com/holoviz/panel/issues/363>`_)
 * Added Ace code editor pane (`#359 <https://github.com/holoviz/panel/issues/359>`_)
 * Allow defining external JS and CSS resources via config, making it easier to extend Panel (`#330 <https://github.com/holoviz/panel/issues/330>`_)
-* Add HTML model capable of executing JS code, allowing more complex embedded items (`#32 <https://github.com/holoviz/panel/issues/32>`_6)
+* Add HTML model capable of executing JS code, allowing more complex embedded items (`#32 <https://github.com/holoviz/panel/issues/32>`_)
 * Add a KaTeX and MathJax based LaTeX pane, replacing the previous limited matplotlib/PNG-based support (`#311 <https://github.com/holoviz/panel/issues/311>`_)
 
 Other new features:

@@ -81,7 +81,7 @@ jobs:
     - &conda_pkg
       <<: *conda_default
       stage: conda_dev_package
-      env: DESC="" TRAVIS_NOCACHE=$TRAVIS_JOB_ID LABELS=$LABELS_DEV CHANS=$CHANS_DEV
+      env: DESC="" TRAVIS_NOCACHE=$TRAVIS_JOB_ID LABELS=$LABELS_DEV CHANS="-c pyviz/label/dev -c bokeh"
       install:
         - doit package_build $CHANS $PKG_TEST_PYTHON --test-group=unit_deploy
       script: doit package_upload --token=$ANACONDA_TOKEN $LABELS
@@ -102,7 +102,7 @@ jobs:
 
     - <<: *conda_pkg
       stage: conda_package
-      env: DESC="" TRAVIS_NOCACHE=$TRAVIS_JOB_ID LABELS=$LABELS_REL CHANS=$CHANS_REL
+      env: DESC="" TRAVIS_NOCACHE=$TRAVIS_JOB_ID LABELS=$LABELS_REL CHANS="-c pyviz -c bokeh"
 
     - <<: *pip_pkg
       env: PYPI=pypi PYPIUSER=$PPU PYPIPASS=$PPP
@@ -116,9 +116,10 @@ jobs:
       env: DESC="docs" PANEL_DOC_BUILD='true' PANEL_EMBED="true" PANEL_EMBED_JSON="true" PANEL_EMBED_JSON_PREFIX="json"
       script:
         - doit develop_install $CHANS_DEV -o doc -o examples
-        - pip install pydeck
+        - pip install pydeck sphinxcontrib-napoleon
         # note: will vastly simplified in a future version of nbsite
         - nbsite generate-rst --org pyviz --project-name panel
+        - python ./doc/generate_modules.py panel -d ./doc/api -n panel -e tests
         - nbsite build --what=html --output=builtdocs
         - touch ./builtdocs/.nojekyll
       deploy:
