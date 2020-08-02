@@ -247,7 +247,7 @@ class ListLike(param.Parameterized):
                              % type(self).__name__)
         p = dict(self.param.get_param_values(), **params)
         del p['objects']
-        return type(self)(*objects, **params)
+        return type(self)(*objects, **p)
 
     def append(self, obj):
         """
@@ -358,6 +358,8 @@ class ListPanel(ListLike, Panel):
                                  "as positional arguments or as a keyword, "
                                  "not both." % type(self).__name__)
             params['objects'] = [panel(pane) for pane in objects]
+        elif 'objects' in params:
+            params['objects'] = [panel(pane) for pane in params['objects']]
         super(Panel, self).__init__(**params)
 
     def _process_param_change(self, params):
@@ -648,7 +650,7 @@ class WidgetBox(ListPanel):
     Vertical layout of widgets.
     """
 
-    css_classes = param.List(default=['widget-box'], doc="""
+    css_classes = param.List(default=['panel-widget-box'], doc="""
         CSS classes to apply to the layout.""")
 
     disabled = param.Boolean(default=False, doc="""
