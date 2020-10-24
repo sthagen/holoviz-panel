@@ -25,6 +25,33 @@ class DataFrame(Widget):
         aggregators for different columns are required the dictionary
         may be nested as `{index_name: {column_name: aggregator}}`""")
 
+    auto_edit = param.Boolean(default=False, doc="""
+        Whether clicking on a table cell automatically starts edit mode.""")
+
+    autosize_mode = param.ObjectSelector(default='force_fit', objects=[
+        "none", "fit_columns", "fit_viewport", "force_fit"], doc="""
+
+        Describes the column autosizing mode with one of the following options:
+
+        ``"fit_columns"``
+          Compute columns widths based on cell contents but ensure the
+          table fits into the available viewport. This results in no
+          horizontal scrollbar showing up, but data can get unreadable
+          if there is not enough space available.
+
+        ``"fit_viewport"``
+          Adjust the viewport size after computing columns widths based
+          on cell contents.
+
+        ``"force_fit"``
+          Fit columns into available space dividing the table width across
+          the columns equally (equivalent to `fit_columns=True`).
+          This results in no horizontal scrollbar showing up, but data
+          can get unreadable if there is not enough space available.
+
+        ``"none"``
+          Do not automatically compute column widths.""")
+
     editors = param.Dict(default={}, doc="""
         Bokeh CellEditor to use for a particular column
         (overrides the default chosen based on the type).""")
@@ -36,10 +63,21 @@ class DataFrame(Widget):
         Bokeh CellFormatter to use for a particular column
         (overrides the default chosen based on the type).""")
 
-    fit_columns = param.Boolean(default=True, doc="""
+    fit_columns = param.Boolean(default=None, doc="""
         Whether columns should expand to the available width. This
         results in no horizontal scrollbar showing up, but data can
         get unreadable if there is no enough space available.""")
+
+    frozen_columns = param.Integer(default=None, doc="""
+        Integer indicating the number of columns to freeze. If set the
+        first N columns will be frozen which prevents them from
+        scrolling out of frame.""")
+
+    frozen_rows = param.Integer(default=None, doc="""
+       Integer indicating the number of rows to freeze. If set the
+       first N rows will be frozen which prevents them from scrolling
+       out of frame, if set to a negative value last N rows will be
+       frozen.""")
 
     reorderable = param.Boolean(default=True, doc="""
         Allows the reordering of a table's columns. To reorder a
@@ -63,8 +101,9 @@ class DataFrame(Widget):
     row_height = param.Integer(default=25, doc="""
         The height of each table row.""")
 
-    widths = param.Dict(default={}, doc="""
-        A mapping from column name to column width.""")
+    widths = param.ClassSelector(default={}, class_=(dict, int), doc="""
+        A mapping from column name to column width or a fixed column
+        width.""")
 
     value = param.Parameter(default=None)
 
@@ -82,6 +121,7 @@ class DataFrame(Widget):
         self.param.watch(self._validate, 'value')
         self._validate(None)
         self._renamed_cols = {}
+        self._updating = False
 
     def _validate(self, event):
         if self.value is None:
@@ -118,6 +158,7 @@ class DataFrame(Widget):
             else:
                 data = df.index
 
+            col_kwargs = {}
             kind = data.dtype.kind
             if kind == 'i':
                 formatter = NumberFormatter()
@@ -142,14 +183,17 @@ class DataFrame(Widget):
                 formatter = self.formatters[col]
             if str(col) != col:
                 self._renamed_cols[str(col)] = col
-            width = self.widths.get(str(col))
+            if isinstance(self.widths, int):
+                col_kwargs['width'] = self.widths
+            elif str(col) in self.widths:
+                col_kwargs['width'] = self.widths.get(str(col))
 
             title = str(col)
             if col in indexes and len(indexes) > 1 and self.hierarchical:
                 title = 'Index: %s' % ' | '.join(indexes)
             column = TableColumn(field=str(col), title=title,
                                  editor=editor, formatter=formatter,
-                                 width=width)
+                                 **col_kwargs)
             columns.append(column)
         return columns
 
@@ -200,15 +244,20 @@ class DataFrame(Widget):
         props['columns'] = self._get_columns()
         props['index_position'] = None
         props['fit_columns'] = self.fit_columns
+        if 'autosize_mode' in DataTable.properties():
+            props['frozen_columns'] = self.frozen_columns
+            props['frozen_rows'] = self.frozen_rows
+            props['autosize_mode'] = self.autosize_mode
+            props['auto_edit'] = self.auto_edit
         props['row_height'] = self.row_height
-        props['editable'] = not self.disabled and len(self.indexes) == 1
+        props['editable'] = not self.disabled and len(self.indexes) <= 1
         props['sortable'] = self.sortable
         props['reorderable'] = self.reorderable
         return props
 
     def _process_param_change(self, msg):
         if 'disabled' in msg:
-            msg['editable'] = not msg.pop('disabled') and len(self.indexes) == 1
+            msg['editable'] = not msg.pop('disabled') and len(self.indexes) <= 1
         return super(DataFrame, self)._process_param_change(msg)
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
@@ -224,7 +273,9 @@ class DataFrame(Widget):
     def _manual_update(self, events, model, doc, root, parent, comm):
         self._validate(None)
         for event in events:
-            if event.name in ('value', 'show_index'):
+            if event.type == 'triggered' and self._updating:
+                continue
+            elif event.name in ('value', 'show_index'):
                 cds = model.source
                 data = {k if isinstance(k, str) else str(k): v
                         for k, v in ColumnDataSource.from_df(self.value).items()}
@@ -266,7 +317,11 @@ class DataFrame(Widget):
                     self.value[k] = v
                     updated = True
             if updated:
-                self.param.trigger('value')
+                self._updating = True
+                try:
+                    self.param.trigger('value')
+                finally:
+                    self._updating = False
         if 'indices' in events:
             self.selection = events.pop('indices')
         super(DataFrame, self)._process_events(events)

@@ -57,7 +57,7 @@ class Location(Syncable):
 
     def _onload(self, event):
         # Skip if href was not previously empty or not in a server context
-        if event.old or not state.curdoc: 
+        if event.old or not state.curdoc:
             return
         for cb in state._onload.get(state.curdoc, []):
             cb()
@@ -75,7 +75,16 @@ class Location(Syncable):
         root = self._get_model(doc, comm=comm)
         ref = root.ref['id']
         state._views[ref] = (self, root, doc, comm)
+        self._documents[doc] = root
         return root
+
+    def _cleanup(self, root):
+        if root.document in self._documents:
+            del self._documents[root.document]
+        ref = root.ref['id']
+        super()._cleanup(root)
+        if ref in state._views:
+            del state._views[ref]
 
     def _update_synced(self, event=None):
         if self._syncing:
@@ -83,8 +92,17 @@ class Location(Syncable):
         query_params = self.query_params
         for p, parameters, _ in self._synced:
             mapping = {v: k for k, v in parameters.items()}
-            p.param.set_param(**{mapping[k]: v for k, v in query_params.items()
-                                 if k in mapping})
+            mapped = {}
+            for k, v in query_params.items():
+                if k not in mapping:
+                    continue
+                pname = mapping[k]
+                try:
+                    v = p.param[pname].deserialize(v)
+                except Exception:
+                    pass
+                mapped[pname] = v
+            p.param.set_param(**mapped)
 
     def _update_query(self, *events, query=None):
         if self._syncing:
@@ -94,7 +112,12 @@ class Location(Syncable):
             matches = [ps for o, ps, _ in self._synced if o in (e.cls, e.obj)]
             if not matches:
                 continue
-            query[matches[0][e.name]] = e.new
+            owner = e.cls if e.obj is None else e.obj
+            try:
+                val = owner.param.serialize_value(e.name)
+            except Exception:
+                val = e.new
+            query[matches[0][e.name]] = val
         self._syncing = True
         try:
             self.update_query(**{k: v for k, v in query.items() if v is not None})
@@ -113,14 +136,15 @@ class Location(Syncable):
     def sync(self, parameterized, parameters=None):
         """
         Syncs the parameters of a Parameterized object with the query
-        parameters in the URL.
-        
+        parameters in the URL. If no parameters are supplied all
+        parameters except the name are synced.
+
         Arguments
         ---------
         parameterized (param.Parameterized):
           The Parameterized object to sync query parameters with
         parameters (list or dict):
-          A list or dictionary specifying parameters to sync. 
+          A list or dictionary specifying parameters to sync.
           If a dictionary is supplied it should define a mapping from
           the Parameterized's parameteres to the names of the query
           parameters.
@@ -134,22 +158,33 @@ class Location(Syncable):
         self._update_query(query={v: getattr(parameterized, k)
                                   for k, v in parameters.items()})
 
-    def unsync(self, parameterized):
+    def unsync(self, parameterized, parameters=None):
         """
-        Unsyncs a Parameterized object which has been previous synced
-        with the Location component.
-        
+        Unsyncs the parameters of the Parameterized with the query
+        params in the URL. If no parameters are supplied all
+        parameters except the name are unsynced.
+
         Arguments
         ---------
         parameterized (param.Parameterized):
-          The Parameterized object to sync query parameters with
+          The Parameterized object to unsync query parameters with
+        parameters (list or dict):
+          A list of parameters to unsync.
         """
         matches = [s for s in self._synced if s[0] is parameterized]
         if not matches:
             ptype = type(parameterized)
             raise ValueError(f"Cannot unsync {ptype} object since it "
                              "was never synced in the first place.")
-        self._synced.remove(matches[0])
-        parameterized.param.unwatch(matches[0][-1])
-        
-        
+        synced = []
+        for p, params, watcher in self._synced:
+            if parameterized is p:
+                parameterized.param.unwatch(watcher)
+                if parameters is not None:
+                    new_params = {p: q for p, q in params.items()
+                                  if p not in parameters}
+                    new_watcher = parameterized.param.watch(watcher.fn, list(new_params))
+                    synced.append((p, new_params, new_watcher))
+            else:
+                synced.append((p, params, watcher))
+        self._synced = synced

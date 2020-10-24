@@ -35,7 +35,7 @@ from abc import abstractmethod
 class AbstractVTK(PaneBase):
 
     __abstract = True
-    
+
     axes = param.Dict(doc="""
         Parameters of the axes to construct in the 3d view.
 
@@ -65,6 +65,9 @@ class AbstractVTK(PaneBase):
 
     orientation_widget = param.Boolean(default=False, doc="""
         Activate/Deactivate the orientation widget display.""")
+
+    interactive_orientation_widget = param.Boolean(default=True, constant=True, doc="""
+    """)
 
     def _process_param_change(self, msg):
         msg = super(AbstractVTK, self)._process_param_change(msg)
@@ -96,11 +99,11 @@ class SyncHelpers:
         ren_win = vtk.vtkRenderWindow()
         ren_win.AddRenderer(ren)
         return ren_win
-    
+
     def set_background(self, r, g, b):
         self.get_renderer().SetBackground(r, g, b)
         self.synchronize()
-    
+
     def add_actors(self, actors):
         """
         Add a list of `actors` to the VTK renderer
@@ -118,7 +121,7 @@ class SyncHelpers:
         """
         for actor in actors:
             self.get_renderer().RemoveActor(actor)
-    
+
     def remove_all_actors(self):
         self.remove_actors(self.actors)
 
@@ -149,10 +152,10 @@ class SyncHelpers:
 
 class VTK:
     """
-    Class factory: allows to switch between VTKJS, VTKRenderWindow, and 
+    Class factory: allows to switch between VTKJS, VTKRenderWindow, and
     VTKRenderWindowSynchronized pane in function of the object type and
     when the serialisation of the vtkRenderWindow occurs.
-    Once a pane is returned by this class (inst = VTK(object)), one can 
+    Once a pane is returned by this class (inst = VTK(object)), one can
     use pn.help(inst) to see parameters available for the current pane
     """
 
@@ -161,10 +164,12 @@ class VTK:
             if VTKRenderWindow.applies(obj, **params):
                 return VTKRenderWindow(obj, **params)
             else:
+                if params.get('interactive_orientation_widget', False):
+                    param.main.param.warning("""Setting interactive_orientation_widget=True will break synchronization capabilities of the pane""")
                 return VTKRenderWindowSynchronized(obj, **params)
         elif VTKJS.applies(obj):
             return VTKJS(obj, **params)
-    
+
     @staticmethod
     def import_scene(filename, synchronizable=True):
         from .synchronizable_deserializer import import_synch_file
@@ -183,7 +188,7 @@ class VTK:
 class BaseVTKRenderWindow(AbstractVTK):
 
     __abstract = True
-    
+
     enable_keybindings = param.Boolean(default=False, doc="""
         Activate/Deactivate keys binding.
 
@@ -199,14 +204,23 @@ class BaseVTKRenderWindow(AbstractVTK):
          This parameter is constant, once set it can't be modified.
 
          Warning: when the serialization occurs at instantiation, the vtkRenderWindow and
-         the view are not fully synchronized. The view displays the state of the scene 
+         the view are not fully synchronized. The view displays the state of the scene
          captured when the panel was created, if elements where added or removed between the
          instantiation and the display these changes will not be reflected.
          Moreover when the pane object is updated (replaced or call to param.trigger('object')),
          all the scene is rebuilt from scratch.
     """)
 
-    _rename = {'serialize_on_instantiation': None}
+    serialize_all_data_arrays = param.Boolean(default=False, constant=True, doc="""
+        If true, enable the serialization of all data arrays of vtkDataSets (point data, cell data and field data).
+        By default the value is False and only active scalars of each dataset are serialized and transfer to the
+        javascript side.
+
+        Enabling this option will increase memory and network transfer volume but results in more reactive visualizations
+        by using some custom javascript functions.
+    """)
+
+    _rename = {'serialize_on_instantiation': None, 'serialize_all_data_arrays': None}
 
     _applies_kw = True
 
@@ -223,7 +237,7 @@ class BaseVTKRenderWindow(AbstractVTK):
         else:
             import vtk
             return isinstance(obj, vtk.vtkRenderWindow)
-    
+
     def get_renderer(self):
         """
         Get the vtk Renderer associated to this pane
@@ -255,7 +269,7 @@ class BaseVTKRenderWindow(AbstractVTK):
                     infered_cmaps[cmap_name] = self._vtklut2bkcmap(lut, cmap_name)
             cmaps = infered_cmaps.values()
         return cmaps
-    
+
     @param.depends('color_mappers')
     def _construct_colorbars(self, color_mappers=None):
         if not color_mappers:
@@ -281,13 +295,13 @@ class BaseVTKRenderWindow(AbstractVTK):
             return Pane(self._construct_colorbars(color_mappers))
         else:
             return Pane(self._construct_colorbars)
-            
 
-    def export_scene(self, filename='vtk_scene'):
+
+    def export_scene(self, filename='vtk_scene', all_data_arrays=False):
         if '.' not in filename:
             filename += '.synch'
         import panel.pane.vtk.synchronizable_serializer as rws
-        context = rws.SynchronizationContext(debug=self._debug_serializer)
+        context = rws.SynchronizationContext(serialize_all_data_arrays=all_data_arrays, debug=self._debug_serializer)
         scene, arrays = self._serialize_ren_win(self.object, context, binary=True, compression=False)
 
         with zipfile.ZipFile(filename, mode='w') as zf:
@@ -315,7 +329,7 @@ class BaseVTKRenderWindow(AbstractVTK):
             from ...models.vtk import VTKSynchronizedPlot
         else:
             VTKSynchronizedPlot = getattr(sys.modules['panel.models.vtk'], 'VTKSynchronizedPlot')
-        
+
         return VTKSynchronizedPlot
 
     def _serialize_ren_win(self, ren_win, context, binary=False, compression=True, exclude_arrays=None):
@@ -329,7 +343,7 @@ class BaseVTKRenderWindow(AbstractVTK):
         scene = rws.serializeInstance(None, ren_win, context.getReferenceId(ren_win), context, 0)
         scene['properties']['numberOfLayers'] = 2 #On js side the second layer is for the orientation widget
         arrays = {name: context.getCachedDataArray(name, binary=binary, compression=compression)
-                    for name in context.dataArrayCache.keys() 
+                    for name in context.dataArrayCache.keys()
                     if name not in exclude_arrays}
         ren_win.Finalize()
         ren_win.SetOffScreenRendering(store_offscreen_rendering)
@@ -344,7 +358,7 @@ class BaseVTKRenderWindow(AbstractVTK):
             return "#{0:02x}{1:02x}{2:02x}".format(
                 int(255 * r), int(255 * g), int(255 * b)
             )
-    
+
 
 class VTKRenderWindow(BaseVTKRenderWindow):
     """
@@ -377,7 +391,7 @@ class VTKRenderWindow(BaseVTKRenderWindow):
 
         if root is None:
             root = model
-        self._link_props(model, 
+        self._link_props(model,
                          ['enable_keybindings', 'orientation_widget'],
                          doc, root, comm)
         self._models[root.ref['id']] = (model, parent)
@@ -385,7 +399,11 @@ class VTKRenderWindow(BaseVTKRenderWindow):
 
     def _update(self, ref=None, model=None):
         import panel.pane.vtk.synchronizable_serializer as rws
-        context = rws.SynchronizationContext(id_root=make_globally_unique_id(), debug=self._debug_serializer)
+        context = rws.SynchronizationContext(
+            id_root=make_globally_unique_id(),
+            serialize_all_data_arrays=self.serialize_all_data_arrays,
+            debug=self._debug_serializer
+        )
         self._scene, self._arrays = self._serialize_ren_win(
             self.object,
             context,
@@ -403,6 +421,9 @@ class VTKRenderWindowSynchronized(BaseVTKRenderWindow, SyncHelpers):
     with a custom bokeh model on javascript side
     """
 
+    interactive_orientation_widget = param.Boolean(default=False, constant=True, doc="""
+    """)
+
     _one_time_reset = param.Boolean(default=False)
 
     _rename = dict(_one_time_reset='one_time_reset',
@@ -415,7 +436,7 @@ class VTKRenderWindowSynchronized(BaseVTKRenderWindow, SyncHelpers):
         serialize_on_instantiation = kwargs.get('serialize_on_instantiation', False)
         return (super(VTKRenderWindowSynchronized, cls).applies(obj, **kwargs) and
                 not serialize_on_instantiation)
-    
+
     def __init__(self, object=None, **params):
         if object is None:
             object = self.make_ren_win()
@@ -428,7 +449,11 @@ class VTKRenderWindowSynchronized(BaseVTKRenderWindow, SyncHelpers):
         """
         VTKSynchronizedPlot = super(VTKRenderWindowSynchronized, self)._get_model(doc, root=None, parent=None, comm=None)
         import panel.pane.vtk.synchronizable_serializer as rws
-        context = rws.SynchronizationContext(id_root=make_globally_unique_id(), debug=self._debug_serializer)
+        context = rws.SynchronizationContext(
+            id_root=make_globally_unique_id(),
+            serialize_all_data_arrays=self.serialize_all_data_arrays,
+            debug=self._debug_serializer
+        )
         scene, arrays = self._serialize_ren_win(self.object, context)
         self._update_color_mappers()
         props = self._process_param_change(self._init_properties())
@@ -437,7 +462,7 @@ class VTKRenderWindowSynchronized(BaseVTKRenderWindow, SyncHelpers):
 
         if root is None:
             root = model
-        self._link_props(model, 
+        self._link_props(model,
                          ['camera', 'color_mappers', 'enable_keybindings', 'one_time_reset',
                           'orientation_widget'],
                          doc, root, comm)
@@ -453,7 +478,7 @@ class VTKRenderWindowSynchronized(BaseVTKRenderWindow, SyncHelpers):
     def _update(self, ref=None, model=None):
         context = self._contexts[model.id]
         scene, arrays = self._serialize_ren_win(
-            self.object, 
+            self.object,
             context,
             exclude_arrays=model.arrays_processed
         )
@@ -485,12 +510,14 @@ class VTKRenderWindowSynchronized(BaseVTKRenderWindow, SyncHelpers):
         old_camera = self.vtk_camera
         new_camera = vtk.vtkCamera()
         self.vtk_camera = new_camera
+        exclude_properties = ['mtime']
         if self.camera is not None:
             for k, v in self.camera.items():
-                if type(v) is list:
-                    getattr(new_camera, 'Set' + k[0].capitalize() + k[1:])(*v)
-                else:
-                    getattr(new_camera, 'Set' + k[0].capitalize() + k[1:])(v)
+                if k not in exclude_properties:
+                    if type(v) is list:
+                        getattr(new_camera, 'Set' + k[0].capitalize() + k[1:])(*v)
+                    else:
+                        getattr(new_camera, 'Set' + k[0].capitalize() + k[1:])(v)
         else:
             new_camera.DeepCopy(old_camera)
 
@@ -502,6 +529,9 @@ class VTKVolume(AbstractVTK):
         Value to control the ambient lighting. It is the light an
         object gives even in the absence of strong light. It is
         constant in all directions.""")
+
+    controller_expanded = param.Boolean(default=True, doc="""
+        If True the volume controller panel options is expanded in the view""")
 
     colormap = param.Selector(default='erdc_rainbow_bright', objects=PRESET_CMAPS, doc="""
         Name of the colormap used to transform pixel value in color.""")
@@ -626,7 +656,7 @@ class VTKVolume(AbstractVTK):
                               **props)
         if root is None:
             root = model
-        self._link_props(model, ['colormap', 'orientation_widget', 'camera', 'mapper'], doc, root, comm)
+        self._link_props(model, ['colormap', 'orientation_widget', 'camera', 'mapper', 'controller_expanded'], doc, root, comm)
         self._models[root.ref['id']] = (model, parent)
         return model
 

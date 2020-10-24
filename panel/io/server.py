@@ -3,35 +3,36 @@ Utilities for creating bokeh Server instances.
 """
 from __future__ import absolute_import, division, unicode_literals
 
+import datetime as dt
 import os
 import signal
 import sys
 import threading
 import uuid
 
+from collections import OrderedDict
 from contextlib import contextmanager
 from functools import partial
 from types import FunctionType, MethodType
 
 from bokeh.document.events import ModelChangedEvent
-from bokeh.embed.server import server_html_page_for_session
+from bokeh.embed.bundle import extension_dirs
+from bokeh.io import curdoc
 from bokeh.server.server import Server
-from bokeh.server.views.session_handler import SessionHandler
-from bokeh.server.views.static_handler import StaticHandler
-from bokeh.server.urls import per_app_patterns
-from bokeh.settings import settings
 from tornado.ioloop import IOLoop
 from tornado.websocket import WebSocketHandler
-from tornado.web import RequestHandler, StaticFileHandler, authenticated
+from tornado.web import RequestHandler, StaticFileHandler
 from tornado.wsgi import WSGIContainer
 
-from .resources import PanelResources
+from ..util import bokeh_version
 from .state import state
-
 
 #---------------------------------------------------------------------
 # Private API
 #---------------------------------------------------------------------
+
+# Handle serving of the panel extension before session is loaded
+extension_dirs['panel'] = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'dist'))
 
 INDEX_HTML = os.path.join(os.path.dirname(__file__), '..', '_templates', "index.html")
 
@@ -46,6 +47,33 @@ def _server_url(url, port):
         return '%s:%d%s' % (url.rsplit(':', 1)[0], port, "/")
     else:
         return 'http://%s:%d%s' % (url.split(':')[0], port, "/")
+
+
+def init_doc(doc):
+    doc = doc or curdoc()
+    if not doc.session_context:
+        return doc
+
+    from ..config import config
+    session_id = doc.session_context.id
+    sessions = state.session_info['sessions']
+    if config.session_history == 0 or session_id in sessions:
+        return doc
+
+    state.session_info['total'] += 1
+    if config.session_history > 0 and len(sessions) >= config.session_history:
+        old_history = list(sessions.items())
+        sessions = OrderedDict(old_history[-(config.session_history-1):])
+        state.session_info['sessions'] = sessions
+    sessions[session_id] = {
+        'started': dt.datetime.now().timestamp(),
+        'rendered': None,
+        'ended': None,
+        'user_agent': state.headers.get('User-Agent')
+    }
+    if bokeh_version >= '2.2.0':
+        doc.on_event('document_ready', state._init_session)
+    return doc
 
 
 @contextmanager
@@ -67,39 +95,6 @@ def _eval_panel(panel, server_id, title, location, doc):
         else:
             doc = as_panel(panel)._modify_doc(server_id, title, doc, location)
         return doc
-
-
-class PanelDocHandler(SessionHandler):
-    """
-    Implements a custom Tornado handler for document display page
-    overriding the default bokeh DocHandler to replace the default
-    resources with a Panel resources object.
-    """
-
-    @authenticated
-    async def get(self, *args, **kwargs):
-        session = await self.get_session()
-
-        mode = settings.resources(default="server")
-        css_files = session.document.template_variables.get('template_css_files')
-        resource_opts = dict(mode=mode, extra_css_files=css_files)
-        if mode == "server":
-            resource_opts.update({
-                'root_url': self.application._prefix,
-                'path_versioner': StaticHandler.append_version
-            })
-        resources = PanelResources(**resource_opts)
-
-        page = server_html_page_for_session(
-            session, resources=resources, title=session.document.title,
-            template=session.document.template,
-            template_variables=session.document.template_variables
-        )
-
-        self.set_header("Content-Type", 'text/html')
-        self.write(page)
-
-per_app_patterns[0] = (r'/?', PanelDocHandler)
 
 #---------------------------------------------------------------------
 # Public API
@@ -346,9 +341,6 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
             apps[slug] = partial(_eval_panel, app, server_id, title_, location)
     else:
         apps = {'/': partial(_eval_panel, panel, server_id, title, location)}
-
-    dist_dir = os.path.join(os.path.split(os.path.dirname(__file__))[0], 'dist')
-    static_dirs = dict(static_dirs, panel_dist=dist_dir)
 
     extra_patterns += get_static_routes(static_dirs)
 

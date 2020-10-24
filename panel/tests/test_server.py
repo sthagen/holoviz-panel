@@ -1,16 +1,15 @@
 import os
 import time
 
-from tempfile import NamedTemporaryFile
-
+import param
 import pytest
 import requests
 
+from panel.config import config
 from panel.io import state
 from panel.models import HTML as BkHTML
 from panel.pane import Markdown
 from panel.io.server import serve
-from panel.template import Template
 
 
 def test_get_server(html_server_session):
@@ -57,6 +56,38 @@ def test_server_static_dirs():
     server.stop()
 
 
+def test_server_session_info():
+    with config.set(session_history=-1):
+        html = Markdown('# Title')
+
+        server = serve(html, port=5009, threaded=True, show=False)
+
+        # Wait for server to start
+        time.sleep(1)
+
+        requests.get("http://localhost:5009/")
+
+        assert state.session_info['total'] == 1
+        assert len(state.session_info['sessions']) == 1
+        sid, session = list(state.session_info['sessions'].items())[0]
+        assert session['user_agent'].startswith('python-requests')
+        assert state.session_info['live'] == 0
+
+        doc = list(html._documents.keys())[0]
+        session_context = param.Parameterized()
+        session_context._document = doc
+        session_context.id = sid
+        doc._session_context = session_context
+        state.curdoc = doc
+        state._init_session(None)
+        assert state.session_info['live'] == 1
+
+    server.stop()
+    state.curdoc = None
+    html._server_destroy(session_context)
+    assert state.session_info['live'] == 0
+
+
 def test_show_server_info(html_server_session, markdown_server_session):
     server_info = repr(state)
     assert "localhost:5006 - HTML" in server_info
@@ -82,22 +113,3 @@ def test_multiple_titles(multiple_apps_server_sessions):
     with pytest.raises(KeyError):
         session1, session2 = multiple_apps_server_sessions(
             slugs=('app1', 'app2'), titles={'badkey': 'APP1', 'app2': 'APP2'})
-
-
-def test_template_css():
-    t = Template("{% extends base %}")
-    t.add_panel('A', 1)
-    css = ".test { color: 'green' }"
-    ntf = NamedTemporaryFile()
-    with open(ntf.name, 'w') as f:
-        f.write(css)
-    t.add_variable('template_css_files', [ntf.name])
-
-    server = serve(t, port=5009, threaded=True, show=False)
-
-    # Wait for server to start
-    time.sleep(1)
-
-    r = requests.get("http://localhost:5009/")
-    assert css in r.content.decode('utf-8')
-    server.stop()

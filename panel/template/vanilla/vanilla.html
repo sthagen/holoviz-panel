@@ -1,17 +1,37 @@
 {% extends base %}
 
+{% block preamble %}
+{% if app_favicon %}<link rel="icon" href="{{ app_favicon }}" type="{{favicon_type}}">{% endif %}
+{% if meta_name %}<meta name="name" content="{{ meta_name }}">{% endif %}
+{% if meta_description %}<meta name="description" content="{{ meta_description }}">{% endif %}
+{% if meta_keywords %}<meta name="keywords" content="{{ meta_keywords }}">{% endif %}
+{% if meta_author %}<meta name="author" content="{{ meta_author }}">{% endif %}
+{% if meta_refresh %}<meta http-equiv="refresh" content="{{ meta_refresh }}">{% endif %}
+{% if meta_viewport %}<meta name="viewport" content="{{ meta_viewport }}">{% endif %}
+{% if base_url and base_target %}<base href="{{ base_url }}" target="{{ base_target }}">{% endif %}
+
+<link rel="stylesheet" href="{{ template_resources['css']['base'] }}">
+<link rel="stylesheet" href="{{ template_resources['css']['theme'] }}">
+{% endblock %}
+
 <!-- goes in body -->
 {% block contents %}
-<div class="" id="container">
-  <nav class="" style="{% if header_background %}background-color: {{ header_background }} !important;{% endif %}{% if header_color %}color: {{ header_color }}{% endif %}" id="header">
+<div id="container">
+  <nav style="{% if header_background %}background-color: {{ header_background }} !important;{% endif %}{% if header_color %}color: {{ header_color }}{% endif %}" id="header">
     {% if nav %}
-    <span style="font-size:30px;cursor:pointer" onclick="closeNav()" id="sidebar-button">
-	  <div class="pn-bar"></div>
-	  <div class="pn-bar"></div>
-	  <div class="pn-bar"></div>
-	</span>
+    <span onclick="closeNav()" id="sidebar-button">
+      <div class="pn-bar"></div>
+      <div class="pn-bar"></div>
+      <div class="pn-bar"></div>
+    </span>
     {% endif %}
-    <a class="title" href="#">{{ app_title }}</a>
+	  <div class="app-header">
+      {% if app_logo %}<a href="/"><img src="{{ app_logo }}" class="app-logo"></a>{% endif %}
+      {% if site_title %}<a class="title" href="/" >&nbsp;{{ site_title }}</a>{% endif %}
+      {% if site_title and app_title%}<span class="title">&nbsp;-</span>{% endif %}
+      {% if app_title %}<a class="title" href="" >&nbsp;{{ app_title }}</a>{% endif %}
+    </div>
+    <div id="header-items">
     {% for doc in docs %}
     {% for root in doc.roots %}
     {% if "header" in root.tags %}
@@ -19,7 +39,7 @@
     {% endif %}
     {% endfor %}
     {% endfor %}
-
+    </div>
 	{% if busy %}
 	<div class="pn-busy-container">
 	  {{ embed(roots.busy_indicator) | indent(6) }}
@@ -43,7 +63,14 @@
     </div>
     {% endif %}
 
-    <div class="main" id="main">
+    <div class="main" id="main"
+    {% if not nav %}
+    style="margin-left: 0px;"
+    {% endif %}
+    >
+      {% if main_max_width %}
+      <div style="margin-left: auto; margin-right: auto;max-width: {{main_max_width}}">
+      {% endif %}
       {% for doc in docs %}
       {% for root in doc.roots %}
       {% if "main" in root.tags %}
@@ -51,6 +78,9 @@
       {% endif %}
       {% endfor %}
       {% endfor %}
+      {% if main_max_width %}
+      </div>
+      {% endif %}
 
 	  <div id="pn-Modal" class="pn-modal header-adjust">
 		<div class="pn-modal-content">
@@ -71,14 +101,14 @@
 <script>
   function openNav() {
     document.getElementById("sidebar").style.left = 0;
-    document.getElementById("main").style.marginLeft = "16.7vw";
+    document.getElementById("main").style.marginLeft = "300px";
     document.getElementById("sidebar-button").onclick = closeNav;
     var interval = setInterval(function () { window.dispatchEvent(new Event('resize')); }, 10);
     setTimeout(function () { clearInterval(interval) }, 210)
   }
 
   function closeNav() {
-    document.getElementById("sidebar").style.left = "-16.7vw";
+    document.getElementById("sidebar").style.left = "-300px";
     document.getElementById("main").style.marginLeft = 0;
     document.getElementById("sidebar-button").onclick = openNav;
     var interval = setInterval(function () { window.dispatchEvent(new Event('resize')); }, 10);

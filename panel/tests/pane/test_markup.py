@@ -91,7 +91,7 @@ def test_markdown_pane_extensions(document, comm):
     assert model.text.startswith('&lt;div class=&quot;codehilite')
 
     pane.extensions = ["extra", "smarty"]
-    assert model.text.startswith('&lt;pre&gt;&lt;code class=&quot;python')
+    assert model.text.startswith('&lt;pre&gt;&lt;code class=&quot;language-python')
 
 
 def test_html_pane(document, comm):
