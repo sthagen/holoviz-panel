@@ -2,8 +2,6 @@
 Various utilities for loading JS dependencies and rendering plots
 inside the Jupyter notebook.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import json
 import uuid
 import sys
@@ -65,6 +63,14 @@ def push(doc, comm, binary=True):
     for header, payload in msg.buffers:
         comm.send(json.dumps(header))
         comm.send(buffers=[payload])
+
+
+def push_on_root(ref):
+    if ref not in state._views:
+        return
+    (self, root, doc, comm) = state._views[ref]
+    if comm and 'embedded' not in root.tags:
+        push(doc, comm)
 
 DOC_NB_JS = _env.get_template("doc_nb_js.js")
 AUTOLOAD_NB_JS = _env.get_template("autoload_panel_js.js")

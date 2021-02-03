@@ -90,7 +90,7 @@ class _config(param.Parameterized):
         Specify the default sizing mode behavior of panels.""")
 
     _comms = param.ObjectSelector(
-        default='default', objects=['default', 'ipywidgets'], doc="""
+        default='default', objects=['default', 'ipywidgets', 'vscode', 'colab'], doc="""
         Whether to render output in Jupyter with the default Jupyter
         extension or use the jupyter_bokeh ipywidget model.""")
 
@@ -151,7 +151,7 @@ class _config(param.Parameterized):
     _truthy = ['True', 'true', '1', True, 1]
 
     def __init__(self, **params):
-        super(_config, self).__init__(**params)
+        super().__init__(**params)
         for p in self.param:
             if p.startswith('_'):
                 setattr(self, p+'_', None)
@@ -457,6 +457,13 @@ class panel_extension(_pyviz_extension):
             self._apply_signatures()
 
         loaded = self._loaded
+
+        # Short circuit pyvista extension load if VTK is already initialized
+        if loaded and args == ('vtk',) and 'vtk' in self._loaded_extensions:
+            curframe = inspect.currentframe()
+            calframe = inspect.getouterframes(curframe, 2)
+            if len(calframe) >= 3 and 'pyvista' in calframe[2].filename:
+                return
 
         if 'holoviews' in sys.modules:
             import holoviews as hv

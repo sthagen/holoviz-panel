@@ -8,8 +8,6 @@ code were copied directly from ipywidgets:
 Copyright (c) Jupyter Development Team and PyViz Development Team.
 Distributed under the terms of the Modified BSD License.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import types
 
 from collections import OrderedDict
@@ -38,7 +36,9 @@ import param
 
 from .layout import Panel, Column, Row
 from .pane import PaneBase, HTML, panel
+from .pane.base import ReplacementPane
 from .util import as_unicode
+from .viewable import Viewable
 from .widgets import (Checkbox, TextInput, Widget, IntSlider, FloatSlider,
                       Select, DiscreteSlider, Button)
 
@@ -129,8 +129,9 @@ class interactive(PaneBase):
             raise ImportError('interact requires either recent Python version '
                               '(>=3.3 or IPython to inspect function signatures.')
 
-        super(interactive, self).__init__(object, **params)
+        super().__init__(object, **params)
 
+        self.throttled = kwargs.pop('throttled', False)
         new_kwargs = self.find_abbreviations(kwargs)
         # Before we proceed, let's make sure that the user has passed a set of args+kwargs
         # that will lead to a valid call of the function. This protects against unspecified
@@ -147,7 +148,13 @@ class interactive(PaneBase):
         if self.manual_update:
             widgets.append(('manual', Button(name=self.manual_name)))
         self._widgets = OrderedDict(widgets)
-        self._pane = panel(self.object(**self.kwargs), name=self.name)
+        pane = self.object(**self.kwargs)
+        if isinstance(pane, Viewable):
+            self._pane = pane
+            self._internal = False
+        else:
+            self._pane = panel(pane, name=self.name)
+            self._internal = True
         self._inner_layout = Row(self._pane)
         widgets = [widget for _, widget in widgets if isinstance(widget, Widget)]
         if 'name' in params:
@@ -167,6 +174,7 @@ class interactive(PaneBase):
     # Callback API
     #----------------------------------------------------------------
 
+    @property
     def _synced_params(self):
         return []
 
@@ -180,29 +188,29 @@ class interactive(PaneBase):
             def update_pane(change):
                 # Try updating existing pane
                 new_object = self.object(**self.kwargs)
-                pane_type = self.get_pane_type(new_object)
-                if type(self._pane) is pane_type:
-                    if isinstance(new_object, (PaneBase, Panel)):
-                        new_params = {
-                            k: v for k, v in new_object.param.get_param_values()
-                            if k != 'name'
-                        }
-                        self._pane.set_param(**new_params)
-                    else:
-                        self._pane.object = new_object
+                new_pane, internal = ReplacementPane._update_from_object(
+                    new_object, self._pane, self._internal
+                )
+                if new_pane is None:
                     return
 
                 # Replace pane entirely
-                self._pane = panel(new_object)
-                self._inner_layout[0] = self._pane
+                self._pane = new_pane
+                self._inner_layout[0] = new_pane
+                self._internal = internal
 
-            pname = 'clicks' if name == 'manual' else 'value'
+            if self.throttled and hasattr(widget, 'value_throttled'):
+                v = 'value_throttled'
+            else:
+                v = 'value'
+
+            pname = 'clicks' if name == 'manual' else v
             watcher = widget.param.watch(update_pane, pname)
             self._callbacks.append(watcher)
 
     def _cleanup(self, root):
         self._inner_layout._cleanup(root)
-        super(interactive, self)._cleanup(root)
+        super()._cleanup(root)
 
     #----------------------------------------------------------------
     # Public API
@@ -468,6 +476,8 @@ class _InteractFactory(object):
             #
             # Simply return the new factory
             return self
+        elif 'throttled' in check_argspec(f).args:
+            raise ValueError('A function cannot have "throttled" as an argument')
 
         # positional arg support in: https://gist.github.com/8851331
         # Handle the cases 1 and 2
@@ -511,7 +521,7 @@ class fixed(param.Parameterized):
     description = param.String(default='')
 
     def __init__(self, value, **kwargs):
-        super(fixed, self).__init__(value=value, **kwargs)
+        super().__init__(value=value, **kwargs)
 
     def get_interact_value(self):
         """Return the value for this widget which should be passed to

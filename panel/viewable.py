@@ -213,7 +213,7 @@ class Layoutable(param.Parameterized):
         elif (not (self.param.sizing_mode.constant or self.param.sizing_mode.readonly) and
               type(self).sizing_mode is None):
             params['sizing_mode'] = params.get('sizing_mode', config.sizing_mode)
-        super(Layoutable, self).__init__(**params)
+        super().__init__(**params)
 
 
 class ServableMixin(object):
@@ -366,7 +366,7 @@ class Renderable(param.Parameterized):
     __abstract = True
 
     def __init__(self, **params):
-        super(Renderable, self).__init__(**params)
+        super().__init__(**params)
         self._documents = {}
         self._models = {}
         self._comms = {}
@@ -434,9 +434,8 @@ class Renderable(param.Parameterized):
             add_to_doc(model, doc)
         return model
 
-    def _init_properties(self):
-        return {k: v for k, v in self.param.get_param_values()
-                if v is not None}
+    def _init_params(self):
+        return {k: v for k, v in self.param.get_param_values() if v is not None}
 
     def _server_destroy(self, session_context):
         """
@@ -461,7 +460,7 @@ class Renderable(param.Parameterized):
             loc._cleanup(root)
             del state._locations[doc]
 
-    def get_root(self, doc=None, comm=None):
+    def get_root(self, doc=None, comm=None, preprocess=True):
         """
         Returns the root model and applies pre-processing hooks
 
@@ -471,6 +470,8 @@ class Renderable(param.Parameterized):
           Bokeh document the bokeh model will be attached to.
         comm: pyviz_comms.Comm
           Optional pyviz_comms when working in notebook
+        preprocess: boolean (default=True)
+          Whether to run preprocessing hooks
 
         Returns
         -------
@@ -478,7 +479,8 @@ class Renderable(param.Parameterized):
         """
         doc = init_doc(doc)
         root = self._get_model(doc, comm=comm)
-        self._preprocess(root)
+        if preprocess:
+            self._preprocess(root)
         ref = root.ref['id']
         state._views[ref] = (self, root, doc, comm)
         return root
@@ -514,17 +516,27 @@ class Viewable(Renderable, Layoutable, ServableMixin):
             import holoviews as hv
             loaded = hv.extension._loaded
 
-        if config.comms == 'ipywidgets':
+
+        if config.comms in ('vscode', 'ipywidgets'):
             widget = ipywidget(self)
-            data = {}
+            if hasattr(widget, '_repr_mimebundle_'):
+                return widget._repr_mimebundle_(include, exclude)
+            plaintext = repr(widget)
+            if len(plaintext) > 110:
+                plaintext = plaintext[:110] + '…'
+            data = {
+                'text/plain': plaintext,
+            }
             if widget._view_name is not None:
                 data['application/vnd.jupyter.widget-view+json'] = {
                     'version_major': 2,
                     'version_minor': 0,
                     'model_id': widget._model_id
                 }
-            if widget._view_name is not None:
-                widget._handle_displayed()
+            if config.comms == 'vscode':
+                from IPython.display import display
+                display(data, raw=True)
+                return {'text/html': '<div style="display: none"></div>'}, {}
             return data, {}
 
         if not loaded:
@@ -533,6 +545,10 @@ class Viewable(Renderable, Layoutable, ServableMixin):
                                'Ensure you run pn.extension() before '
                                'displaying objects in the notebook.')
             return None
+
+        if config.comms == 'colab':
+            from .io.notebook import load_notebook
+            load_notebook(config.inline)
 
         try:
             from IPython import get_ipython
@@ -666,7 +682,7 @@ class Viewable(Renderable, Layoutable, ServableMixin):
     def save(self, filename, title=None, resources=None, template=None,
              template_variables=None, embed=False, max_states=1000,
              max_opts=3, embed_json=False, json_prefix='', save_path='./',
-             load_path=None, embed_states={}):
+             load_path=None, progress=True, embed_states={}):
         """
         Saves Panel objects to file.
 
@@ -696,13 +712,15 @@ class Viewable(Renderable, Layoutable, ServableMixin):
            The path to save json files to
         load_path: str (default=None)
            The path or URL the json files will be loaded from.
+        progress: boolean (default=True)
+          Whether to report progress
         embed_states: dict (default={})
           A dictionary specifying the widget values to embed for each widget
         """
         return save(self, filename, title, resources, template,
                     template_variables, embed, max_states, max_opts,
                     embed_json, json_prefix, save_path, load_path,
-                    embed_states)
+                    progress, embed_states)
 
     def server_doc(self, doc=None, title=None, location=True):
         """

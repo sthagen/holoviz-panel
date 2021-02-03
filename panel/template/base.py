@@ -2,13 +2,13 @@
 Templates allow multiple Panel objects to be embedded into custom HTML
 documents.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import os
 import sys
 import uuid
 
+from collections import OrderedDict
 from functools import partial
+from urllib.parse import urljoin
 
 import param
 
@@ -25,7 +25,7 @@ from ..io.notebook import render_template
 from ..io.resources import CDN_DIST, LOCAL_DIST
 from ..io.save import save
 from ..io.state import state
-from ..layout import Column, ListLike
+from ..layout import Column, ListLike, GridSpec
 from ..models.comm_manager import CommManager
 from ..pane import panel as _panel, HTML, Str, HoloViews
 from ..pane.image import ImageBase
@@ -58,7 +58,7 @@ class BaseTemplate(param.Parameterized, ServableMixin):
     __abstract = True
 
     def __init__(self, template=None, items=None, nb_template=None, **params):
-        super(BaseTemplate, self).__init__(**params)
+        super().__init__(**params)
         if isinstance(template, string_types):
             self._code = template
             template = _Template(template)
@@ -68,7 +68,7 @@ class BaseTemplate(param.Parameterized, ServableMixin):
         if isinstance(nb_template, string_types):
             nb_template = _Template(nb_template)
         self.nb_template = nb_template or template
-        self._render_items = {}
+        self._render_items = OrderedDict()
         self._render_variables = {}
         self._server = None
         self._layout = self._build_layout()
@@ -140,13 +140,20 @@ class BaseTemplate(param.Parameterized, ServableMixin):
             loc = self._add_location(doc, location)
             doc.on_session_destroyed(loc._server_destroy)
         doc.title = title
+
+        # Initialize fake root. This is needed to ensure preprocessors
+        # which assume that all models are owned by a single root can
+        # link objects across multiple roots in a template.
         col = Column()
         preprocess_root = col.get_root(doc, comm)
+        col._hooks.append(self._apply_hooks)
         ref = preprocess_root.ref['id']
+
         for name, (obj, tags) in self._render_items.items():
             if self._apply_hooks not in obj._hooks:
                 obj._hooks.append(self._apply_hooks)
-            model = obj.get_root(doc, comm)
+            # We skip preprocessing on the individual roots
+            model = obj.get_root(doc, comm, preprocess=False)
             mref = model.ref['id']
             doc.on_session_destroyed(obj._server_destroy)
             for sub in obj.select(Viewable):
@@ -163,9 +170,10 @@ class BaseTemplate(param.Parameterized, ServableMixin):
             self._apply_root(name, model, tags)
             add_to_doc(model, doc, hold=bool(comm))
 
+        # Here we ensure that the preprocessor is run across all roots
+        # and set up session cleanup hooks for the fake root.
         state._fake_roots.append(ref)
         state._views[ref] = (col, preprocess_root, doc, comm)
-
         col._preprocess(preprocess_root)
         col._documents[doc] = preprocess_root
         doc.on_session_destroyed(col._server_destroy)
@@ -183,10 +191,12 @@ class BaseTemplate(param.Parameterized, ServableMixin):
             import holoviews as hv
             loaded = hv.extension._loaded
         if not loaded:
-            param.main.warning('Displaying Panel objects in the notebook '
-                               'requires the panel extension to be loaded. '
-                               'Ensure you run pn.extension() before '
-                               'displaying objects in the notebook.')
+            param.main.param.warning(
+                'Displaying Panel objects in the notebook requires '
+                'the panel extension to be loaded. Ensure you run '
+                'pn.extension() before displaying objects in the '
+                'notebook.'
+            )
             return None
 
         try:
@@ -400,13 +410,21 @@ class BasicTemplate(BaseTemplate):
         template = self._template.read_text()
         if 'header' not in params:
             params['header'] = ListLike()
+        else:
+            params['header'] = self._get_params(params['header'], self.param.header.class_)
         if 'main' not in params:
             params['main'] = ListLike()
+        else:
+            params['main'] = self._get_params(params['main'], self.param.main.class_)
         if 'sidebar' not in params:
             params['sidebar'] = ListLike()
+        else:
+            params['sidebar'] = self._get_params(params['sidebar'], self.param.sidebar.class_)
         if 'modal' not in params:
             params['modal'] = ListLike()
-        super(BasicTemplate, self).__init__(template=template, **params)
+        else:
+            params['modal'] = self._get_params(params['modal'], self.param.modal.class_)
+        super().__init__(template=template, **params)
         if self.busy_indicator:
             state.sync_busy(self.busy_indicator)
         self._js_area = HTML(margin=0, width=0, height=0)
@@ -426,7 +444,7 @@ class BasicTemplate(BaseTemplate):
 
     def _init_doc(self, doc=None, comm=None, title=None, notebook=False, location=True):
         title = title or self.title
-        doc = super(BasicTemplate, self)._init_doc(doc, comm, title, notebook, location)
+        doc = super()._init_doc(doc, comm, title, notebook, location)
         if self.theme:
             theme = self.theme.find_theme(type(self))
             if theme and theme.bokeh_theme:
@@ -436,7 +454,11 @@ class BasicTemplate(BaseTemplate):
     def _template_resources(self):
         name = type(self).__name__.lower()
         resources = _settings.resources(default="server")
-        dist_path = LOCAL_DIST if resources == 'server' else CDN_DIST
+        base_url = state.base_url[1:] if state.base_url.startswith('/') else state.base_url        
+        if resources == 'server':
+            dist_path = urljoin(base_url, LOCAL_DIST)
+        else:
+            dist_path = CDN_DIST
 
         # External resources
         css_files = dict(self._resources['css'])
@@ -453,9 +475,13 @@ class BasicTemplate(BaseTemplate):
         css_files['base'] = dist_path + f'bundled/{name}/{base_css}'
         if self.theme:
             theme = self.theme.find_theme(type(self))
-            if theme and theme.css:
-                basename = os.path.basename(theme.css)
-                css_files['theme'] = dist_path + f'bundled/{name}/{basename}'
+            if theme:
+                if theme.base_css:
+                    basename = os.path.basename(theme.base_css)
+                    css_files['base_theme'] = dist_path + f'bundled/theme/{basename}'
+                if theme.css:
+                    basename = os.path.basename(theme.css)
+                    css_files['theme'] = dist_path + f'bundled/{name}/{basename}'
         return {'css': css_files, 'js': js_files}
 
     def _update_vars(self, *args):
@@ -513,19 +539,27 @@ class BasicTemplate(BaseTemplate):
         elif event.obj is self.modal:
             tag = 'modal'
 
-        old = event.old if isinstance(event.old, list) else event.old.values()
+        old = event.old if isinstance(event.old, list) else list(event.old.values())
         for obj in old:
             ref = str(id(obj))
-            if obj not in event.new and ref in self._render_items:
+            if ref in self._render_items:
                 del self._render_items[ref]
 
-        labels = {}
         new = event.new if isinstance(event.new, list) else event.new.values()
+        for o in new:
+            if o not in old:
+                for hvpane in o.select(HoloViews):
+                    if self.theme.bokeh_theme:
+                        hvpane.theme = self.theme.bokeh_theme
+
+        labels = {}
         for obj in new:
             ref = str(id(obj))
-            labels[ref] = 'Content' if obj.name.startswith(type(obj).__name__) else obj.name
-            if ref not in self._render_items:
-                self._render_items[ref] = (obj, [tag])
+            if obj.name.startswith(type(obj).__name__):
+                labels[ref] = 'Content'
+            else:
+                labels[ref] = obj.name
+            self._render_items[ref] = (obj, [tag])
         tags = [tags for _, tags in self._render_items.values()]
         self._render_variables['nav'] = any('nav' in ts for ts in tags)
         self._render_variables['header'] = any('header' in ts for ts in tags)
@@ -541,6 +575,7 @@ class BasicTemplate(BaseTemplate):
           modal.style.display = "block";
         </script>
         """
+        self._js_area.object = ""
 
     def close_modal(self):
         """
@@ -552,6 +587,7 @@ class BasicTemplate(BaseTemplate):
           modal.style.display = "none";
         </script>
         """
+        self._js_area.object = ""
 
     @staticmethod
     def _get_favicon_type(favicon):
@@ -570,6 +606,27 @@ class BasicTemplate(BaseTemplate):
         else:
             raise ValueError("favicon type not supported.")
 
+    @staticmethod
+    def _get_params(value, class_):
+        if isinstance(value, class_):
+            return value
+        if isinstance(value, tuple):
+            value = [*value]
+        elif not isinstance(value, list):
+            value = [value]
+
+        # Important to fx. convert @param.depends functions
+        value = [_panel(item) for item in value]
+
+        if class_ is ListLike:
+            return ListLike(objects=value)
+        if class_ is GridSpec:
+            grid = GridSpec(ncols=12, mode='override')
+            for index, item in enumerate(value):
+                grid[index, :]=item
+            return grid
+
+        return value
 
 
 class Template(BaseTemplate):
@@ -605,7 +662,7 @@ class Template(BaseTemplate):
     """
 
     def __init__(self, template=None, nb_template=None, items=None, **params):
-        super(Template, self).__init__(template=template, nb_template=nb_template, items=items, **params)
+        super().__init__(template=template, nb_template=nb_template, items=items, **params)
         items = {} if items is None else items
         for name, item in items.items():
             self.add_panel(name, item)

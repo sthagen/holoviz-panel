@@ -41,6 +41,11 @@ def _build_paneljs():
     build(panel_dir)
     print("Bundling custom model resources:")
     bundle_resources()
+    if sys.platform != "win32":
+        # npm can cause non-blocking stdout; so reset it just in case
+        import fcntl
+        flags = fcntl.fcntl(sys.stdout, fcntl.F_GETFL)
+        fcntl.fcntl(sys.stdout, fcntl.F_SETFL, flags&~os.O_NONBLOCK)
 
 
 class CustomDevelopCommand(develop):
@@ -92,10 +97,11 @@ except Exception:
 ########## dependencies ##########
 
 install_requires = [
-    'bokeh >=2.2',
-    'param >=1.9.3',
+    'bokeh >=2.3.0dev12',
+    'param >=1.10.0',
     'pyviz_comms >=0.7.4',
     'markdown',
+    'requests',
     'tqdm',
     'pyct >=0.4.4'
 ]
@@ -119,7 +125,7 @@ _tests = [
     'folium',
     'ipympl',
     'twine',
-    'pandas<1.1', # temporary fix for streamz incompatibility
+    'pandas',
     'ipython >=7.0'
 ]
 
@@ -167,9 +173,7 @@ extras_require['build'] = [
     'pyct >=0.4.4',
     'setuptools >=30.3.0',
     'bokeh >=2.0.0',
-    'pyviz_comms >=0.6.0',
-    # non-python dependency
-    'nodejs >=10.13.0',
+    'pyviz_comms >=0.6.0'
 ]
 
 setup_args = dict(
@@ -215,7 +219,8 @@ setup_args = dict(
     entry_points={
         'console_scripts': [
             'panel = panel.command:main'
-        ]},
+        ]
+    },
     install_requires=install_requires,
     extras_require=extras_require,
     tests_require=extras_require['tests']
@@ -233,10 +238,14 @@ if __name__ == "__main__":
         with open('./panel/package.json') as f:
             package_json = json.load(f)
         js_version = package_json['version']
-        if version != 'None' and version.split('+')[0] != js_version.replace('-', ''):
-            raise ValueError("panel.js version (%s) does not match "
-                             "panel version (%s). Cannot build release."
-                             % (js_version, version))
+        version = version.split('+')[0]
+        if any(dev in version for dev in ('a', 'b', 'rc')) and not '-' in js_version:
+            raise ValueError(f"panel.js dev versions ({js_version}) must "
+                             "must separate dev suffix with a dash, e.g. "
+                             "v1.0.0rc1 should be v1.0.0-rc1.")
+        if version != 'None' and version != js_version.replace('-', ''):
+            raise ValueError(f"panel.js version ({js_version}) does not match "
+                             f"panel version ({version}). Cannot build release.")
 
     setup(**setup_args)
 

@@ -1,10 +1,10 @@
 """
 Utilities for creating bokeh Server instances.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import datetime as dt
+import inspect
 import os
+import pathlib
 import signal
 import sys
 import threading
@@ -12,9 +12,16 @@ import uuid
 
 from collections import OrderedDict
 from contextlib import contextmanager
-from functools import partial
+from functools import partial, wraps
 from types import FunctionType, MethodType
 
+import param
+import bokeh
+import bokeh.command.util
+
+from bokeh.application import Application as BkApplication
+from bokeh.application.handlers.function import FunctionHandler
+from bokeh.command.util import build_single_handler_application
 from bokeh.document.events import ModelChangedEvent
 from bokeh.embed.bundle import extension_dirs
 from bokeh.io import curdoc
@@ -24,7 +31,6 @@ from tornado.websocket import WebSocketHandler
 from tornado.web import RequestHandler, StaticFileHandler
 from tornado.wsgi import WSGIContainer
 
-from ..util import bokeh_version
 from .state import state
 
 #---------------------------------------------------------------------
@@ -54,25 +60,15 @@ def init_doc(doc):
     if not doc.session_context:
         return doc
 
-    from ..config import config
     session_id = doc.session_context.id
     sessions = state.session_info['sessions']
-    if config.session_history == 0 or session_id in sessions:
+    if session_id not in sessions:
         return doc
 
-    state.session_info['total'] += 1
-    if config.session_history > 0 and len(sessions) >= config.session_history:
-        old_history = list(sessions.items())
-        sessions = OrderedDict(old_history[-(config.session_history-1):])
-        state.session_info['sessions'] = sessions
-    sessions[session_id] = {
-        'started': dt.datetime.now().timestamp(),
-        'rendered': None,
-        'ended': None,
-        'user_agent': state.headers.get('User-Agent')
-    }
-    if bokeh_version >= '2.2.0':
-        doc.on_event('document_ready', state._init_session)
+    sessions[session_id].update({
+        'started': dt.datetime.now().timestamp()
+    })
+    doc.on_event('document_ready', state._init_session)
     return doc
 
 
@@ -96,9 +92,100 @@ def _eval_panel(panel, server_id, title, location, doc):
             doc = as_panel(panel)._modify_doc(server_id, title, doc, location)
         return doc
 
+
+def async_execute(func):
+    """
+    Wrap async event loop scheduling to ensure that with_lock flag
+    is propagated from function to partial wrapping it.
+    """
+    if not state.curdoc or not state.curdoc.session_context:
+        ioloop = IOLoop.current()
+        event_loop = ioloop.asyncio_loop
+        if event_loop.is_running():
+            ioloop.add_callback(func)
+        else:
+            event_loop.run_until_complete(func())
+        return
+
+    if isinstance(func, partial) and hasattr(func.func, 'lock'):
+        unlock = not func.func.lock
+    else:
+        unlock = not getattr(func, 'lock', False)
+    if unlock:
+        @wraps(func)
+        async def wrapper(*args, **kw):
+            return await func(*args, **kw)
+        wrapper.nolock = True
+    else:
+        wrapper = func
+    state.curdoc.add_next_tick_callback(wrapper)
+
+
+param.parameterized.async_executor = async_execute
+
+
+class Application(BkApplication):
+
+    async def on_session_created(self, session_context):
+        for cb in state._on_session_created:
+            cb(session_context)
+        await super().on_session_created(session_context)
+
+bokeh.command.util.Application = Application
+
+
+def _initialize_session_info(session_context):
+    from ..config import config
+    session_id = session_context.id
+    sessions = state.session_info['sessions']
+    if config.session_history == 0 or session_id in sessions:
+        return
+
+    state.session_info['total'] += 1
+    if config.session_history > 0 and len(sessions) >= config.session_history:
+        old_history = list(sessions.items())
+        sessions = OrderedDict(old_history[-(config.session_history-1):])
+        state.session_info['sessions'] = sessions
+    sessions[session_id] = {
+        'launched': dt.datetime.now().timestamp(),
+        'started': None,
+        'rendered': None,
+        'ended': None,
+        'user_agent': session_context.request.headers.get('User-Agent')
+    }
+
+state.on_session_created(_initialize_session_info)
+
 #---------------------------------------------------------------------
 # Public API
 #---------------------------------------------------------------------
+
+
+def with_lock(func):
+    """
+    Wrap a callback function to execute with a lock allowing the
+    function to modify bokeh models directly.
+
+    Arguments
+    ---------
+    func: callable
+      The callable to wrap
+
+    Returns
+    -------
+    wrapper: callable
+      Function wrapped to execute without a Document lock.
+    """
+    if inspect.iscoroutinefunction(func):
+        @wraps(func)
+        async def wrapper(*args, **kw):
+            return await func(*args, **kw)
+    else:
+        @wraps(func)
+        def wrapper(*args, **kw):
+            return func(*args, **kw)
+    wrapper.lock = True
+    return wrapper
 
 
 @contextmanager
@@ -152,7 +239,7 @@ def serve(panels, port=0, address=None, websocket_origin=None, loop=None,
     """
     Allows serving one or more panel objects on a single server.
     The panels argument should be either a Panel object or a function
-    returning a Panel object or a dictionary of these two. If a 
+    returning a Panel object or a dictionary of these two. If a
     dictionary is supplied the keys represent the slugs at which
     each app is served, e.g. `serve({'app': panel1, 'app2': panel2})`
     will serve apps at /app and /app2 on the server.
@@ -252,7 +339,7 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
                verbose=False, location=True, static_dirs={},
                oauth_provider=None, oauth_key=None, oauth_secret=None,
                oauth_extra_params={}, cookie_secret=None,
-               oauth_encryption_key=None, **kwargs):
+               oauth_encryption_key=None, session_history=None, **kwargs):
     """
     Returns a Server instance with this panel attached as the root
     app.
@@ -303,6 +390,11 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
     oauth_encryption_key: str (optional, default=False)
       A random encryption key used for encrypting OAuth user
       information and access tokens.
+    session_history: int (optional, default=None)
+      The amount of session history to accumulate. If set to non-zero
+      and non-None value will launch a REST endpoint at
+      /rest/session_info, which returns information about the session
+      history.
     kwargs: dict
       Additional keyword arguments to pass to Server instance.
 
@@ -311,6 +403,9 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
     server : bokeh.server.server.Server
       Bokeh Server instance running this panel
     """
+    from ..config import config
+    from .rest import REST_PROVIDERS
+
     server_id = kwargs.pop('server_id', uuid.uuid4().hex)
     kwargs['extra_patterns'] = extra_patterns = kwargs.get('extra_patterns', [])
     if isinstance(panel, dict):
@@ -323,7 +418,7 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
                     raise KeyError(
                         "Keys of the title dictionnary and of the apps "
                         f"dictionary must match. No {slug} key found in the "
-                        "title dictionnary.") 
+                        "title dictionary.")
             else:
                 title_ = title
             slug = slug if slug.startswith('/') else '/'+slug
@@ -338,11 +433,26 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
                     extra_patterns.append(('^'+slug+'.*', ProxyFallbackHandler,
                                            dict(fallback=wsgi, proxy=slug)))
                     continue
-            apps[slug] = partial(_eval_panel, app, server_id, title_, location)
+            if isinstance(app, pathlib.Path):
+                app = str(app) # enables serving apps from Paths
+            if (isinstance(app, str) and (app.endswith(".py") or app.endswith(".ipynb"))
+                and os.path.isfile(app)):
+                apps[slug] = build_single_handler_application(app)
+            else:
+                handler = FunctionHandler(partial(_eval_panel, app, server_id, title_, location))
+                apps[slug] = Application(handler)
     else:
-        apps = {'/': partial(_eval_panel, panel, server_id, title, location)}
+        handler = FunctionHandler(partial(_eval_panel, panel, server_id, title, location))
+        apps = {'/': Application(handler)}
 
     extra_patterns += get_static_routes(static_dirs)
+
+    if session_history is not None:
+        config.session_history = session_history
+    if config.session_history != 0:
+        pattern = REST_PROVIDERS['param']([], 'rest')
+        extra_patterns.extend(pattern)
+        state.publish('session_info', state, ['session_info'])
 
     opts = dict(kwargs)
     if loop:
@@ -413,7 +523,7 @@ class StoppableThread(threading.Thread):
     """Thread class with a stop() method."""
 
     def __init__(self, io_loop=None, **kwargs):
-        super(StoppableThread, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.io_loop = io_loop
 
     def run(self):

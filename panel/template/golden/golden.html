@@ -10,17 +10,24 @@
 {% if meta_refresh %}<meta http-equiv="refresh" content="{{ meta_refresh }}">{% endif %}
 {% if meta_viewport %}<meta name="viewport" content="{{ meta_viewport }}">{% endif %}
 {% if base_url and base_target %}<base href="{{ base_url }}" target="{{ base_target }}">{% endif %}
+{% endblock %}
 
-<link rel="stylesheet" href="{{ template_resources['css']['base'] }}">
-<link rel="stylesheet" href="{{ template_resources['css']['theme'] }}">
+{% block postamble %}
 <link type="text/css" rel="stylesheet" href="{{ template_resources['css']['goldenlayout'] }}" />
+<link rel="stylesheet" href="{{ template_resources['css']['base'] }}">
+{% if 'base_theme' in template_resources['css'] %}
+<link rel="stylesheet" href="{{ template_resources['css']['base_theme'] }}">
+{% endif %}
+{% if 'theme' in template_resources['css'] %}
+<link rel="stylesheet" href="{{ template_resources['css']['theme'] }}">
+{% endif %}
 <script type="text/javascript" src="{{ template_resources['js']['jquery'] }}"></script>
 <script type="text/javascript" src="{{ template_resources['js']['goldenlayout'] }}"></script>
 {% endblock %}
 
 <!-- goes in body -->
 {% block contents %}
-<header class="app-bar" id="header">
+<header class="app-bar" id="header" style="{% if header_background %}background-color: {{ header_background }} !important;{% endif %}{% if header_color %}color: {{ header_color }} !important;{% endif %}">
   <div style="display: contents;">
     <div class="app-header">
       {% if app_logo %}<a href="/"><img src="{{ app_logo }}" class="app-logo"></a>{% endif %}

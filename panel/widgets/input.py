@@ -2,8 +2,6 @@
 The input widgets generally allow entering arbitrary information into
 a text field or similar.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import ast
 import json
 
@@ -20,8 +18,9 @@ from bokeh.models.widgets import (
     FileInput as _BkFileInput, TextAreaInput as _BkTextAreaInput,
     NumericInput as _BkNumericInput)
 
+from ..layout import Column
 from ..util import as_unicode
-from .base import Widget
+from .base import Widget, CompositeWidget
 
 
 class TextInput(Widget):
@@ -57,9 +56,13 @@ class FileInput(Widget):
 
     accept = param.String(default=None)
 
-    filename = param.String(default=None)
+    filename = param.ClassSelector(default=None, class_=(str, list),
+                               is_instance=True)
 
-    mime_type = param.String(default=None)
+    mime_type = param.ClassSelector(default=None, class_=(str, list),
+                               is_instance=True)
+
+    multiple = param.Boolean(default=False)
 
     value = param.Parameter(default=None)
 
@@ -70,7 +73,7 @@ class FileInput(Widget):
     _rename = {'name': None, 'filename': None}
 
     def _process_param_change(self, msg):
-        msg = super(FileInput, self)._process_param_change(msg)
+        msg = super()._process_param_change(msg)
         if 'value' in msg:
             msg.pop('value')
         if 'mime_type' in msg:
@@ -78,13 +81,16 @@ class FileInput(Widget):
         return msg
 
     def _filter_properties(self, properties):
-        properties = super(FileInput, self)._filter_properties(properties)
+        properties = super()._filter_properties(properties)
         return properties + ['value', 'mime_type', 'filename']
 
     def _process_property_change(self, msg):
-        msg = super(FileInput, self)._process_property_change(msg)
+        msg = super()._process_property_change(msg)
         if 'value' in msg:
-            msg['value'] = b64decode(msg['value'])
+            if isinstance(msg['value'], string_types):
+                msg['value'] = b64decode(msg['value'])
+            else:
+                msg['value'] = [b64decode(content) for content in msg['value']]
         return msg
 
     def save(self, filename):
@@ -120,7 +126,7 @@ class StaticText(Widget):
     _widget_type = _BkDiv
 
     def _process_param_change(self, msg):
-        msg = super(StaticText, self)._process_property_change(msg)
+        msg = super()._process_property_change(msg)
         if 'value' in msg:
             text = as_unicode(msg.pop('value'))
             partial = self._format.replace('{value}', '').format(title=self.name)
@@ -149,7 +155,7 @@ class DatePicker(Widget):
     _widget_type = _BkDatePicker
 
     def _process_property_change(self, msg):
-        msg = super(DatePicker, self)._process_property_change(msg)
+        msg = super()._process_property_change(msg)
         if 'value' in msg:
             if isinstance(msg['value'], string_types):
                 msg['value'] = datetime.date(datetime.strptime(msg['value'], '%Y-%m-%d'))
@@ -239,7 +245,7 @@ class _SpinnerBase(_NumericInputBase):
                 params['value'] = value
         if 'value' in params and 'value_throttled' in self.param:
             params['value_throttled'] = params['value']
-        super(_SpinnerBase, self).__init__(**params)
+        super().__init__(**params)
 
 
 class IntInput(_SpinnerBase, _IntInputBase):
@@ -248,6 +254,9 @@ class IntInput(_SpinnerBase, _IntInputBase):
 
     value_throttled = param.Integer(default=None, constant=True)
 
+    _rename = dict(_NumericInputBase._rename, value_throttled=None)
+
+
 
 class FloatInput(_SpinnerBase, _FloatInputBase):
 
@@ -255,8 +264,10 @@ class FloatInput(_SpinnerBase, _FloatInputBase):
 
     value_throttled = param.Number(default=None, constant=True)
 
+    _rename = dict(_NumericInputBase._rename, value_throttled=None)
 
-class NumberInput:
+
+class NumberInput(_SpinnerBase):
 
     def __new__(self, **params):
         param_list = ["value", "start", "stop", "step"]
@@ -295,7 +306,7 @@ class LiteralInput(Widget):
     _widget_type = _BkTextInput
 
     def __init__(self, **params):
-        super(LiteralInput, self).__init__(**params)
+        super().__init__(**params)
         self._state = ''
         self._validate(None)
         self._callbacks.append(self.param.watch(self._validate, 'value'))
@@ -312,7 +323,7 @@ class LiteralInput(Widget):
                              (types, new, type(new).__name__))
 
     def _process_property_change(self, msg):
-        msg = super(LiteralInput, self)._process_property_change(msg)
+        msg = super()._process_property_change(msg)
         new_state = ''
         if 'value' in msg:
             value = msg.pop('value')
@@ -347,15 +358,15 @@ class LiteralInput(Widget):
         return msg
 
     def _process_param_change(self, msg):
-        msg = super(LiteralInput, self)._process_param_change(msg)
+        msg = super()._process_param_change(msg)
         if 'value' in msg:
-            value = '' if msg['value'] is None else msg['value']
+            value = msg['value']
             if isinstance(value, string_types):
                 value = repr(value)
             elif self.serializer == 'json':
-                value = json.dumps(value, sort_keys=True)
+                value = json.dumps(value)
             else:
-                value = as_unicode(value)
+                value = '' if value is None else as_unicode(value)
             msg['value'] = value
         msg['title'] = self.name
         return msg
@@ -384,7 +395,7 @@ class DatetimeInput(LiteralInput):
                'start': None, 'end': None, 'serializer': None}
 
     def __init__(self, **params):
-        super(DatetimeInput, self).__init__(**params)
+        super().__init__(**params)
         self.param.watch(self._validate, 'value')
         self._validate(None)
 
@@ -434,6 +445,64 @@ class DatetimeInput(LiteralInput):
         return msg
 
 
+class DatetimeRangeInput(CompositeWidget):
+
+    value = param.Tuple(default=(None, None), length=2)
+
+    start = param.Date(default=None)
+
+    end = param.Date(default=None)
+
+    _composite_type = Column
+
+    def __init__(self, **params):
+        self._text = StaticText(margin=(5, 0, 0, 0), style={'white-space': 'nowrap'})
+        self._start = DatetimeInput(sizing_mode='stretch_width', margin=(5, 0, 0, 0))
+        self._end = DatetimeInput(sizing_mode='stretch_width', margin=(5, 0, 0, 0))
+        if 'value' not in params:
+            params['value'] = (params['start'], params['end'])
+        super().__init__(**params)
+        self._msg = ''
+        self._composite.extend([self._text, self._start, self._end])
+        self._updating = False
+        self._update_widgets()
+        self._update_label()
+
+    @param.depends('name', '_start.name', '_end.name', watch=True)
+    def _update_label(self):
+        self._text.value = f'{self.name}{self._start.name}{self._end.name}{self._msg}'
+
+    @param.depends('_start.value', '_end.value', watch=True)
+    def _update(self):
+        if self._updating:
+            return
+        if (self._start.value is not None and
+            self._end.value is not None and
+            self._start.value > self._end.value):
+            self._msg = ' (start of range must be <= end)'
+            self._update_label()
+            return
+        elif self._msg:
+            self._msg = ''
+            self._update_label()
+        try:
+            self._updating = True
+            self.value = (self._start.value, self._end.value)
+        finally:
+            self._updating = False
+
+    @param.depends('value', 'start', 'end', 'name', watch=True)
+    def _update_widgets(self):
+        if self._updating:
+            return
+        try:
+            self._updating = True
+            self._start.param.set_param(value=self.value[0], start=self.start, end=self.end)
+            self._end.param.set_param(value=self.value[1], start=self.start, end=self.end)
+        finally:
+            self._updating = False
+
+
 class Checkbox(Widget):
 
     value = param.Boolean(default=False)
@@ -449,7 +518,7 @@ class Checkbox(Widget):
     _widget_type = _BkCheckboxGroup
 
     def _process_property_change(self, msg):
-        msg = super(Checkbox, self)._process_property_change(msg)
+        msg = super()._process_property_change(msg)
         if 'value' in msg:
             msg['value'] = 0 in msg.pop('value')
         if 'name' in msg:
@@ -457,7 +526,7 @@ class Checkbox(Widget):
         return msg
 
     def _process_param_change(self, msg):
-        msg = super(Checkbox, self)._process_param_change(msg)
+        msg = super()._process_param_change(msg)
         if 'active' in msg:
             msg['active'] = [0] if msg.pop('active', None) else []
         if 'labels' in msg:

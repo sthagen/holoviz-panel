@@ -2,8 +2,6 @@
 The widgets module contains Widget which provide bi-directional
 communication between a rendered panel and the Widget parameters.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 from .ace import Ace  # noqa
 from .base import Widget, CompositeWidget  # noqa
 from .button import Button, MenuButton, Toggle  # noqa
@@ -21,6 +19,7 @@ from .input import (  # noqa
     Checkbox,
     DatetimeInput,
     DatePicker,
+    DatetimeRangeInput,
     FileInput,
     LiteralInput,
     StaticText,
@@ -43,4 +42,4 @@ from .select import ( # noqa
     MultiChoice, MultiSelect, RadioButtonGroup, RadioBoxGroup, Select,
     ToggleGroup
 )
-from .tables import DataFrame  # noqa
+from .tables import DataFrame, Tabulator  # noqa

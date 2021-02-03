@@ -1,14 +1,13 @@
 """
 Various utilities for recording and embedding state in a rendered app.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import datetime as dt
 import json
 import threading
 
 from collections import OrderedDict
 from weakref import WeakKeyDictionary, WeakSet
+from urllib.parse import urljoin
 
 import param
 
@@ -17,7 +16,7 @@ from bokeh.io import curdoc as _curdoc
 from pyviz_comms import CommManager as _CommManager
 from tornado.web import decode_signed_value
 
-from ..util import base64url_decode, bokeh_version
+from ..util import base64url_decode
 
 
 class _state(param.Parameterized):
@@ -25,6 +24,9 @@ class _state(param.Parameterized):
     Holds global state associated with running apps, allowing running
     apps to indicate their state to a user.
     """
+
+    base_url = param.String(default='/', readonly=True, doc="""
+       Base URL for all server paths.""")
 
     busy = param.Boolean(default=False, readonly=True, doc="""
        Whether the application is currently busy processing a user
@@ -75,6 +77,7 @@ class _state(param.Parameterized):
 
     # Dictionary of callbacks to be triggered on app load
     _onload = WeakKeyDictionary()
+    _on_session_created = []
 
     # Stores a set of locked Websockets, reset after every change event
     _locks = WeakSet()
@@ -109,10 +112,12 @@ class _state(param.Parameterized):
         if not self.curdoc.session_context:
             return
         session_id = self.curdoc.session_context.id
+        session_info = self.session_info['sessions'].get(session_id, {})
+        if session_info.get('rendered') is not None:
+            return
         self.session_info['live'] += 1
-        session_info = self.session_info['sessions'][session_id]
         session_info.update({
-            'rendered': dt.datetime.now().timestamp(),
+            'rendered': dt.datetime.now().timestamp()
         })
 
     def _get_callback(self, endpoint):
@@ -229,9 +234,14 @@ class _state(param.Parameterized):
             return
         if self.curdoc not in self._onload:
             self._onload[self.curdoc] = []
-            if bokeh_version >= '2.2.0':
-                self.curdoc.on_event('document_ready', self._on_load)
+            self.curdoc.on_event('document_ready', self._on_load)
         self._onload[self.curdoc].append(callback)
+
+    def on_session_created(self, callback):
+        """
+        Callback that is triggered when a session is created.
+        """
+        self._on_session_created.append(callback)
 
     def publish(self, endpoint, parameterized, parameters=None):
         """
@@ -290,6 +300,14 @@ class _state(param.Parameterized):
         if self.encryption is None:
             return access_token.decode('utf-8')
         return self.encryption.decrypt(access_token).decode('utf-8')
+
+    @property
+    def app_url(self):
+        if not self.curdoc:
+            return
+        app_url = self.curdoc.session_context.server_context.application_context.url
+        app_url = app_url[1:] if app_url.startswith('/') else app_url
+        return urljoin(self.base_url, app_url)
 
     @property
     def curdoc(self):

@@ -115,7 +115,7 @@ class Progress(ValueIndicator):
 
     max = param.Integer(default=100, doc="The maximum value of the progress bar.")
 
-    value = param.Integer(default=None, bounds=(0, 100), doc="""
+    value = param.Integer(default=None, bounds=(0, None), doc="""
         The current value of the progress bar. If set to None the progress
         bar will be indeterminate and animate depending on the active
         parameter.""")
@@ -127,6 +127,10 @@ class Progress(ValueIndicator):
     @param.depends('max', watch=True)
     def _update_value_bounds(self):
         self.param.value.bounds = (0, self.max)
+               
+    def __init__(self,**params):
+        super().__init__(**params)
+        self._update_value_bounds()
 
 
 class Number(ValueIndicator):
@@ -396,10 +400,6 @@ class Dial(ValueIndicator):
     def _update_value_bounds(self):
         self.param.value.bounds = self.bounds
 
-    def _init_properties(self):
-        return {k: v for k, v in self.param.get_param_values()
-                if v is not None and k not in self._manual_params}
-
     def _get_data(self):
         vmin, vmax = self.bounds
         value = self.value
@@ -431,7 +431,7 @@ class Dial(ValueIndicator):
         colors = self.colors or []
         for (val, _), (_, clr) in zip(colors[:-1], colors[1:]):
             tangle = start-(distance*val)
-            if (vmin + val * (vmax-vmin)) <= self.value:
+            if (vmin + val * (vmax-vmin)) <= value:
                 continue
             x0, y0 = np.cos(tangle), np.sin(tangle)
             x1, y1 = x0*inner_radius, y0*inner_radius
@@ -479,7 +479,7 @@ class Dial(ValueIndicator):
         return annulus_data, needle_data, threshold_data, text_data
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
-        params = self._process_param_change(self._init_properties())
+        params = self._process_param_change(self._init_params())
         model = figure(
             x_range=(-1,1), y_range=(-1,1), tools=[],
             outline_line_color=None, toolbar_location=None,

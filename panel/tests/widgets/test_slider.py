@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
-
 from datetime import datetime, date
 from collections import OrderedDict
 
@@ -24,9 +22,12 @@ def test_float_slider(document, comm):
 
     slider._process_events({'value': 0.2})
     assert slider.value == 0.2
+    slider._process_events({'value_throttled': 0.2})
+    assert slider.value_throttled == 0.2
 
     slider.value = 0.3
     assert widget.value == 0.3
+
 
 def test_int_slider(document, comm):
 
@@ -43,9 +44,13 @@ def test_int_slider(document, comm):
 
     slider._process_events({'value': 2})
     assert slider.value == 2
+    slider._process_events({'value_throttled': 2})
+    assert slider.value_throttled == 2
 
     slider.value = 0
     assert widget.value == 0
+    slider.value_throttled = 0
+    assert widget.value_throttled == 0
 
     # Testing that value matches start value if value not set.
     slider_2 = IntSlider(start=1, end=3, name='Slider_2')
@@ -68,6 +73,8 @@ def test_range_slider(document, comm):
 
     slider._process_events({'value': (0, 2)})
     assert slider.value == (0, 2)
+    slider._process_events({'value_throttled': (0, 2)})
+    assert slider.value_throttled == (0, 2)
 
     slider.value = (0, 1)
     assert widget.value == (0, 1)
@@ -90,10 +97,14 @@ def test_date_slider(document, comm):
     widget.value = (datetime(2018, 9, 3)-epoch).total_seconds()*1000
     date_slider._process_events({'value': widget.value})
     assert date_slider.value == date(2018, 9, 3)
+    date_slider._process_events({'value_throttled': (datetime(2018, 9, 3)-epoch).total_seconds()*1000})
+    assert date_slider.value_throttled == date(2018, 9, 3)
 
     # Test raw timestamp value:
     date_slider._process_events({'value': (datetime(2018, 9, 4)-epoch).total_seconds()*1000.0})
     assert date_slider.value == date(2018, 9, 4)
+    date_slider._process_events({'value_throttled': (datetime(2018, 9, 4)-epoch).total_seconds()*1000.0})
+    assert date_slider.value_throttled == date(2018, 9, 4)
 
     date_slider.value = date(2018, 9, 6)
     assert widget.value == 1536192000000
@@ -117,10 +128,13 @@ def test_date_range_slider(document, comm):
                     (datetime(2018, 9, 6)-epoch).total_seconds()*1000)
     date_slider._process_events({'value': widget.value})
     assert date_slider.value == (datetime(2018, 9, 3), datetime(2018, 9, 6))
+    value_throttled = ((datetime(2018, 9, 3)-epoch).total_seconds()*1000,
+                    (datetime(2018, 9, 6)-epoch).total_seconds()*1000)
+    date_slider._process_events({'value_throttled': value_throttled})
+    assert date_slider.value == (datetime(2018, 9, 3), datetime(2018, 9, 6))
 
     date_slider.value = (datetime(2018, 9, 4), datetime(2018, 9, 6))
     assert widget.value == (1536019200000, 1536192000000)
-
 
 
 def test_discrete_slider(document, comm):
@@ -142,9 +156,22 @@ def test_discrete_slider(document, comm):
     widget.value = 2
     discrete_slider._slider._process_events({'value': 2})
     assert discrete_slider.value == 10
+    discrete_slider._slider._process_events({'value_throttled': 2})
+    assert discrete_slider.value_throttled == 10
 
     discrete_slider.value = 100
     assert widget.value == 3
+
+
+def test_discrete_slider_label_update(document, comm):
+    discrete_slider = DiscreteSlider(name='DiscreteSlider', value=1,
+                                     options=[0.1, 1, 10, 100])
+
+    discrete_slider.value = 100
+
+    box = discrete_slider.get_root(document, comm=comm)
+
+    assert box.children[0].text == 'DiscreteSlider: <b>100</b>'
 
 
 def test_discrete_date_slider(document, comm):
@@ -169,6 +196,8 @@ def test_discrete_date_slider(document, comm):
     widget.value = 2
     discrete_slider._slider._process_events({'value': 2})
     assert discrete_slider.value == dates['2016-01-03']
+    discrete_slider._slider._process_events({'value_throttled': 2})
+    assert discrete_slider.value_throttled == dates['2016-01-03']
 
     discrete_slider.value = dates['2016-01-01']
     assert widget.value == 0
@@ -194,6 +223,8 @@ def test_discrete_slider_options_dict(document, comm):
     widget.value = 2
     discrete_slider._slider._process_events({'value': 2})
     assert discrete_slider.value == 10
+    discrete_slider._slider._process_events({'value_throttled': 2})
+    assert discrete_slider.value_throttled == 10
 
     discrete_slider.value = 100
     assert widget.value == 3

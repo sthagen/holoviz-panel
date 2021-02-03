@@ -1,4 +1,5 @@
 import os
+import pathlib
 import time
 
 import param
@@ -9,7 +10,8 @@ from panel.config import config
 from panel.io import state
 from panel.models import HTML as BkHTML
 from panel.pane import Markdown
-from panel.io.server import serve
+from panel.io.server import get_server, serve, set_curdoc
+from panel.widgets import Button
 
 
 def test_get_server(html_server_session):
@@ -51,9 +53,48 @@ def test_server_static_dirs():
     time.sleep(1)
 
     r = requests.get("http://localhost:5008/tests/test_server.py")
-    with open(__file__) as f:
-        assert f.read() == r.content.decode('utf-8')
-    server.stop()
+
+    try:
+        with open(__file__, encoding='utf-8') as f:
+            assert f.read() == r.content.decode('utf-8').replace('\r\n', '\n')
+    finally:
+        server.stop()
+
+
+def test_server_async_callbacks():
+    button = Button(name='Click')
+
+    counts = []
+
+    async def cb(event, count=[0]):
+        import asyncio
+        count[0] += 1
+        counts.append(count[0])
+        await asyncio.sleep(1)
+        count[0] -= 1
+
+    button.on_click(cb)
+
+    server = serve(button, port=5008, threaded=True, show=False)
+
+    # Wait for server to start
+    time.sleep(1)
+
+    requests.get("http://localhost:5008/")
+
+    doc = list(button._models.values())[0][0].document
+    with set_curdoc(doc):
+        for _ in range(5):
+            button.clicks += 1
+
+    # Wait for callbacks to be scheduled
+    time.sleep(2)
+
+    # Ensure multiple callbacks started concurrently
+    try:
+        assert max(counts) > 1
+    finally:
+        server.stop()
 
 
 def test_server_session_info():
@@ -113,3 +154,14 @@ def test_multiple_titles(multiple_apps_server_sessions):
     with pytest.raises(KeyError):
         session1, session2 = multiple_apps_server_sessions(
             slugs=('app1', 'app2'), titles={'badkey': 'APP1', 'app2': 'APP2'})
+
+
+def test_serve_can_serve_panel_app_from_file():
+    path = pathlib.Path(__file__).parent / "io"/"panel_app.py"
+    server = get_server({"panel-app": path})
+    assert "/panel-app" in server._tornado.applications
+
+def test_serve_can_serve_bokeh_app_from_file():
+    path = pathlib.Path(__file__).parent / "io"/"bk_app.py"
+    server = get_server({"bk-app": path})
+    assert "/bk-app" in server._tornado.applications

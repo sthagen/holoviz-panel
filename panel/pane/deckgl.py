@@ -2,10 +2,7 @@
 Defines a PyDeck Pane which renders a PyDeck plot using a PyDeckPlot
 bokeh model.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import json
-import sys
 
 from collections import defaultdict
 
@@ -15,7 +12,7 @@ import param
 from bokeh.models import ColumnDataSource
 from pyviz_comms import JupyterComm
 
-from ..util import is_dataframe, string_types
+from ..util import is_dataframe, lazy_load, string_types
 from ..viewable import Layoutable
 from .base import PaneBase
 
@@ -124,7 +121,7 @@ class DeckGL(PaneBase):
             data = dict(self.object.__dict__)
             mapbox_api_key = data.pop('mapbox_key', self.mapbox_api_key)
             deck_widget = data.pop('deck_widget', None)
-            tooltip = deck_widget.tooltip
+            tooltip = self.tooltips if isinstance(self.tooltips, dict) else deck_widget.tooltip
             data = {k: v for k, v in recurse_data(data).items() if v is not None}
 
         # Delete undefined width and height
@@ -196,18 +193,9 @@ class DeckGL(PaneBase):
             layer['data'] = sources.index(cds)
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
-        if "panel.models.deckgl" not in sys.modules:
-            if isinstance(comm, JupyterComm):
-                self.param.warning(
-                    "DeckGLPlot was not imported on instantiation "
-                    "and may not render in a notebook. Restart "
-                    "the notebook kernel and ensure you load "
-                    "it as part of the extension using:"
-                    "\n\npn.extension('deckgl')\n"
-                )
-            from ..models.deckgl import DeckGLPlot
-        else:
-            DeckGLPlot = getattr(sys.modules["panel.models.deckgl"], "DeckGLPlot")
+        DeckGLPlot = lazy_load(
+            'panel.models.deckgl', 'DeckGLPlot', isinstance(comm, JupyterComm)
+        )
         data, properties = self._get_properties()
         properties['data_sources'] = sources = []
         self._update_sources(data, sources)

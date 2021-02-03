@@ -2,8 +2,6 @@
 Contains Image panes including renderers for PNG, SVG, GIF and JPG
 file types.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import base64
 
 from io import BytesIO
@@ -42,7 +40,7 @@ class ImageBase(DivPaneBase):
 
     imgtype = 'None'
 
-    _rerender_params = ['alt_text', 'link_url', 'embed', 'object', 'style']
+    _rerender_params = ['alt_text', 'link_url', 'embed', 'object', 'style', 'width', 'height']
 
     _target_transforms = {'object': """'<img src="' + value + '"></img>'"""}
 
@@ -68,7 +66,7 @@ class ImageBase(DivPaneBase):
         if isinstance(object, string_types):
             raise ValueError("%s pane cannot parse string that is not a filename "
                              "or URL." % type(self).__name__)
-        super(ImageBase, self)._type_error(object)
+        super()._type_error(object)
 
     def _img(self):
         if hasattr(self.object, '_repr_{}_'.format(self.imgtype)):
@@ -78,6 +76,8 @@ class ImageBase(DivPaneBase):
                 with open(self.object, 'rb') as f:
                     return f.read()
         if hasattr(self.object, 'read'):
+            if hasattr(self.object, 'seek'):
+                self.object.seek(0)
             return self.object.read()
         if isurl(self.object, None):
             import requests
@@ -96,7 +96,7 @@ class ImageBase(DivPaneBase):
         raise NotImplementedError
 
     def _get_properties(self):
-        p = super(ImageBase, self)._get_properties()
+        p = super()._get_properties()
         if self.object is None:
             return dict(p, text='<img></img>')
         data = self._img()
@@ -199,20 +199,20 @@ class SVG(ImageBase):
 
     @classmethod
     def applies(cls, obj):
-        return (super(SVG, cls).applies(obj) or
+        return (super().applies(obj) or
                 (isinstance(obj, string_types) and obj.lstrip().startswith('<svg')))
 
     def _type_error(self, object):
         if isinstance(object, string_types):
             raise ValueError("%s pane cannot parse string that is not a filename, "
                              "URL or a SVG XML contents." % type(self).__name__)
-        super(SVG, self)._type_error(object)
+        super()._type_error(object)
 
     def _img(self):
         if (isinstance(self.object, string_types) and
             self.object.lstrip().startswith('<svg')):
             return self.object
-        return super(SVG, self)._img()
+        return super()._img()
 
     def _b64(self):
         data = self._img()

@@ -1,8 +1,6 @@
 """
 Various utilities for recording and embedding state in a rendered app.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import os
 import json
 import uuid
@@ -275,7 +273,7 @@ def embed_state(panel, model, doc, max_states=1000, max_opts=3,
                 w_model = w_model.select_one({'type': w_type})
 
         # If there is a widget with the same name, merge with it
-        if widget.name in merged:
+        if widget.name and widget.name in merged:
             merged[widget.name][0].append(w)
             merged[widget.name][1].append(w_model)
             continue

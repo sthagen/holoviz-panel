@@ -1,4 +1,5 @@
-"""Bootstrap inspired Alerts
+"""
+Bootstrap inspired Alerts
 
 See https://getbootstrap.com/docs/4.0/components/alerts/
 """
@@ -18,6 +19,10 @@ class Alert(Markdown):
     """
 
     alert_type = param.ObjectSelector("primary", objects=ALERT_TYPES)
+
+    priority = 0
+
+    _rename = dict(Markdown._rename, alert_type=None)
 
     @classmethod
     def applies(cls, obj):
@@ -42,5 +47,4 @@ class Alert(Markdown):
 
         css_classes.append("alert")
         css_classes.append(f"alert-{self.alert_type}")
-
         self.css_classes = css_classes

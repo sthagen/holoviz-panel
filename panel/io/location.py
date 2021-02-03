@@ -2,6 +2,7 @@
 Defines the Location  widget which allows changing the href of the window.
 """
 
+import json
 import urllib.parse as urlparse
 
 import param
@@ -49,21 +50,13 @@ class Location(Syncable):
     _rename = {"name": None}
 
     def __init__(self, **params):
-        super(Location, self).__init__(**params)
+        super().__init__(**params)
         self._synced = []
         self._syncing = False
         self.param.watch(self._update_synced, ['search'])
-        self.param.watch(self._onload, ['href'])
-
-    def _onload(self, event):
-        # Skip if href was not previously empty or not in a server context
-        if event.old or not state.curdoc:
-            return
-        for cb in state._onload.get(state.curdoc, []):
-            cb()
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
-        model = _BkLocation(**self._process_param_change(self._init_properties()))
+        model = _BkLocation(**self._process_param_change(self._init_params()))
         root = root or model
         values = dict(self.param.get_param_values())
         properties = list(self._process_param_change(values))
@@ -107,20 +100,22 @@ class Location(Syncable):
     def _update_query(self, *events, query=None):
         if self._syncing:
             return
-        query = query or {}
+        serialized = query or {}
         for e in events:
             matches = [ps for o, ps, _ in self._synced if o in (e.cls, e.obj)]
             if not matches:
                 continue
             owner = e.cls if e.obj is None else e.obj
             try:
-                val = owner.param.serialize_value(e.name)
+                val = owner.param[e.name].serialize(e.new)
             except Exception:
                 val = e.new
-            query[matches[0][e.name]] = val
+            if not isinstance(val, str):
+                val = json.dumps(val)
+            serialized[matches[0][e.name]] = val
         self._syncing = True
         try:
-            self.update_query(**{k: v for k, v in query.items() if v is not None})
+            self.update_query(**{k: v for k, v in serialized.items() if v is not None})
         finally:
             self._syncing = False
 
@@ -155,8 +150,19 @@ class Location(Syncable):
         watcher = parameterized.param.watch(self._update_query, list(parameters))
         self._synced.append((parameterized, parameters, watcher))
         self._update_synced()
-        self._update_query(query={v: getattr(parameterized, k)
-                                  for k, v in parameters.items()})
+        query = {}
+        for p, name in parameters.items():
+            v = getattr(parameterized, p)
+            if v is None:
+                continue
+            try:
+                parameterized.param[p].serialize(v)
+            except Exception:
+                pass
+            if not isinstance(v, str):
+                v = json.dumps(v)
+            query[name] = v
+        self._update_query(query=query)
 
     def unsync(self, parameterized, parameters=None):
         """

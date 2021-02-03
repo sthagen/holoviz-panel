@@ -2,8 +2,6 @@
 Defines various Select widgets which allow choosing one or more items
 from a list of options.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import re
 
 from collections import OrderedDict
@@ -57,13 +55,13 @@ class SingleSelectBase(SelectBase):
     __abstract = True
 
     def __init__(self, **params):
-        super(SingleSelectBase, self).__init__(**params)
+        super().__init__(**params)
         values = self.values
         if self.value is None and None not in values and values:
             self.value = values[0]
 
     def _process_param_change(self, msg):
-        msg = super(SingleSelectBase, self)._process_param_change(msg)
+        msg = super()._process_param_change(msg)
         labels, values = self.labels, self.values
         unique = len(set(self.unicode_values)) == len(labels)
         if 'value' in msg:
@@ -73,8 +71,9 @@ class SingleSelectBase(SelectBase):
                 msg['value'] = unicode_values[indexOf(val, values)]
             elif values:
                 self.value = self.values[0]
-            elif self.value is not None:
+            else:
                 self.value = None
+                msg['value'] = ''
 
         if 'options' in msg:
             if isinstance(self.options, dict):
@@ -89,7 +88,7 @@ class SingleSelectBase(SelectBase):
             if values:
                 if not isIn(val, values):
                     self.value = values[0]
-            elif val is not None:
+            else:
                 self.value = None
         return msg
 
@@ -98,12 +97,12 @@ class SingleSelectBase(SelectBase):
         return [as_unicode(v) for v in self.values]
 
     def _process_property_change(self, msg):
-        msg = super(SingleSelectBase, self)._process_property_change(msg)
+        msg = super()._process_property_change(msg)
         if 'value' in msg:
             if not self.values:
                 pass
-            elif msg['value'] is None:
-                msg['value'] = self.values[0]
+            elif msg['value'] == '':
+                msg['value'] = self.values[0] if self.values else None
             else:
                 if isIn(msg['value'], self.unicode_values):
                     idx = indexOf(msg['value'], self.unicode_values)
@@ -136,12 +135,12 @@ class Select(SingleSelectBase):
         return _BkSelect if self.size == 1 else _BkSingleSelect
 
     def __init__(self, **params):
-        super(Select, self).__init__(**params)
+        super().__init__(**params)
         if self.size == 1:
             self.param.size.constant = True
 
     def _process_param_change(self, msg):
-        msg = super(Select, self)._process_param_change(msg)
+        msg = super()._process_param_change(msg)
         if msg.get('size') == 1:
             msg.pop('size')
         return msg
@@ -256,7 +255,7 @@ class _RadioGroupBase(SingleSelectBase):
                 msg['active'] = None
 
         if 'labels' in msg:
-            msg['labels'] = list(msg['labels'])
+            msg['labels'] = self.labels
             value = self.value
             if not isIn(value, values):
                 self.value = None
@@ -325,7 +324,7 @@ class _CheckGroupBase(SingleSelectBase):
             msg['active'] = [indexOf(v, values) for v in msg['active']
                              if isIn(v, values)]
         if 'labels' in msg:
-            msg['labels'] = list(msg['labels'])
+            msg['labels'] = self.labels
             if any(not isIn(v, values) for v in self.value):
                 self.value = [v for v in self.value if isIn(v, values)]
         msg.pop('title', None)
@@ -431,7 +430,7 @@ class CrossSelector(CompositeWidget, MultiSelect):
        selected list.""")
 
     def __init__(self, **params):
-        super(CrossSelector, self).__init__(**params)
+        super().__init__(**params)
         # Compute selected and unselected values
 
         labels, values = self.labels, self.values

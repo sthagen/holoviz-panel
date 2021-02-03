@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
-
 import sys
 
 from distutils.version import LooseVersion
@@ -41,6 +39,8 @@ jb_available = pytest.mark.skipif(jupyter_bokeh is None, reason="requires jupyte
 
 py3_only = pytest.mark.skipif(sys.version_info.major < 3, reason="requires Python 3")
 
+from panel.pane.markup import Markdown
+
 
 def mpl_figure():
     import matplotlib.pyplot as plt
@@ -56,7 +56,10 @@ def check_layoutable_properties(layoutable, model):
     assert model.background == '#ffffff'
 
     layoutable.css_classes = ['custom_class']
-    assert model.css_classes == ['custom_class']
+    if isinstance(layoutable, Markdown):
+        assert model.css_classes == ['custom_class', 'markdown']
+    else:
+        assert model.css_classes == ['custom_class']
 
     layoutable.width = 500
     assert model.width == 500

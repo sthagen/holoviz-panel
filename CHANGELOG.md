@@ -1,10 +1,90 @@
-# Releases 
+# Releases
 
-## Version 0.10
+## Version 0.10.3
+
+Date: 2021-01-18
+
+Another micro-release in the 0.10.x series focusing primarily on bug and regression fixes. Many thanks to @miliante, @MarcSkovMadsen, @Hoxbro, @jlstevens, @jbednar and @philippjfr.
+
+Bug fixes:
+
+- Fix inverted axes on HoloViews plots ([#1732](https://github.com/holoviz/panel/issues/1732))
+- Fix enabling/disabling of FileDownload widget ([#1510](https://github.com/holoviz/panel/issues/1510), [#1820](https://github.com/holoviz/panel/issues/1820))
+- Fix issues serving template resources on server with route prefix ([#1821](https://github.com/holoviz/panel/issues/1821))
+- Fixes for rendering ECharts from pyecharts ([#1874](https://github.com/holoviz/panel/issues/1874), [#1876](https://github.com/holoviz/panel/issues/1876))
+- Fix issues with scroll behavior when expanding/collapsing Card/Accordion ([#1833](https://github.com/holoviz/panel/issues/1833), [#1884](https://github.com/holoviz/panel/issues/1884))
+- Ensure DiscreSlider label is correctly linked to value ([#1906](https://github.com/holoviz/panel/issues/1906))
+- Fix support for setting header_color and header_background on all templates ([#1872](https://github.com/holoviz/panel/issues/1872))
+- Ensure that Template preprocessors are applied during initialization ([#1922](https://github.com/holoviz/panel/issues/1922))
+
+Enhancements:
+
+- Support throttled in Param widget ([#1800](https://github.com/holoviz/panel/pull/1800))
+- Support rendering of hvPlot Interactive objects ([#1824](https://github.com/holoviz/panel/issues/1824))
+- Allow recording session launch time in server session_info ([#1909](https://github.com/holoviz/panel/pull/1909))
+- Add Button.value parameter ([#1910](https://github.com/holoviz/panel/issues/1910))
+- Support upload of multiple parameters on FileInput ([#1911](https://github.com/holoviz/panel/pull/1911))
+- Improve support for DarkTheme in templates ([#1855](https://github.com/holoviz/panel/pull/1855), [#1856](https://github.com/holoviz/panel/pull/1856))
+
+Documentation:
+
+- Fixed IntSlider and FloatSlider example ([#1825](https://github.com/holoviz/panel/pull/1825))
+- Updated instructions for using Panel in JupyterLab ([#1908](https://github.com/holoviz/panel/pull/1908))
+
+## Version 0.10.2
+
+Date: 2020-11-13
+
+This is another micro-release primarily fixing various minor bugs in functionality introduced as part of the 0.10.0 release. Many thanks to @MarcSkovMadsen, @ahuang11, @xavArtley, @Hoxbro, @jbednar and @philippjfr.
+
+Bug fixes:
+
+- Fix various issues with Template CSS ([#1663](https://github.com/holoviz/panel/pull/1663), [#1742](https://github.com/holoviz/panel/pull/1742))
+- Fix BytesIO/StringIO buffers as input to image panes ([#1711](https://github.com/holoviz/panel/issues/1711))
+- Fix out-of-bounds errors when assigning to `GridSpec` with fixed ncols ([#1721](https://github.com/holoviz/panel/pull/1721))
+- Fix deserialization issues for `Plotly.hover_data` ([#1722](https://github.com/holoviz/panel/pull/))
+- Fixed updating of `Alert` parameters after initialization ([#1725](https://github.com/holoviz/panel/pull/1725))
+- Fix ordering of items added to Template areas ([#1736](https://github.com/holoviz/panel/pull/1736))
+- Fix interactivity for items in Card ([#1750](https://github.com/holoviz/panel/pull/1750))
+- Ensure onload callbacks are only run once ([#1746](https://github.com/holoviz/panel/pull/1746))
+- Allow overriding items in grid based templates ([#1741](https://github.com/holoviz/panel/pull/1741))
+- Ensure `ECharts` and `ipywidget` rerender when in `Card` ([#1765](https://github.com/holoviz/panel/pull/1765))
+- Ensure template dark theme persists on HoloViews plots ([#1764](https://github.com/holoviz/panel/pull/1764))
+- Fix responsive height in Plotly pane ([#1770](https://github.com/holoviz/panel/pull/1770))
+- Ensure image panes resize in width and height ([#1777](https://github.com/holoviz/panel/pull/1777))
+- Fix issues with Location.sync serialization ([#1784](https://github.com/holoviz/panel/pull/1784))
+- Add throttled argument to interact ([#1259](https://github.com/holoviz/panel/pull/1259))
+- ECharts pane now loads echarts-gl for 3D support ([#1785](https://github.com/holoviz/panel/pull/1785)) 
+
+Enhancements:
+
+- Improved OAuth encryption key validation ([#1762](https://github.com/holoviz/panel/pull/1762))
+- Add `progress` option to `.save` method ([#1776](https://github.com/holoviz/panel/pull/1776))
+
+## Version 0.10.1
+
+Date: 2020-10-27
+
+This is a micro release of Paanel primarily containing bug fixes following the 0.10.0 release. Many thanks to @MarcSkovMadsen, @jbednar and @philippjfr for contributing fixes to this release.
+
+Enhancements:
+
+- Add pn.bind function to bind parameters to a function ([#1629](https://github.com/holoviz/panel/issues/1629))
+
+Bug fixes:
+
+- Fix `WidgetBox` CSS ([#855](https://github.com/holoviz/panel/pull/855))
+- Fix CSS load order in Templates ([#1698](https://github.com/holoviz/panel/pull/1698))
+- Allow setting `DiscreteSlider` orientation ([#1683](https://github.com/holoviz/panel/pull/1683))
+- Ensure JS callbacks and links are only set up once on templates ([#1700](https://github.com/holoviz/panel/pull/1700))
+- Initialize pipeline only once ([#1705](https://github.com/holoviz/panel/pull/1705))
+- Allow using `NumberInput` as `Param` pane widget ([#1708](https://github.com/holoviz/panel/issues/1708))
+
+## Version 0.10.0
 
 Date: 2020-10-23
 
-This is a major release of Panel, with a slew of new features and enhancements, plus a wide array of minor fixes and improvements to the documentation, and website.
+This is a minor but jam-packed release of Panel, with a slew of new features and enhancements, plus a wide array of minor fixes and improvements to the documentation, and website.
 Many thanks to the people who contributed to this release, including @philippjfr, @MarkSkovMadsen (alert pane, templates, docs), @xavArtley (VTK improvements, templates, input/spinner widgets), @maximlt (panel serve), @jbednar (docs, reviewing), @kebowen (templates), @ahuang11 (datepicker), @nghenzi (react template, bugfixes), @nritsche (panel serve), @ltalirz (autocomplete input), @BoBednar (docs), @tmikolajczyk, @halilbay, @Hoxbro, and @ceball (testing and automation).
 
 Features:
@@ -279,7 +359,7 @@ Date: 2019-11-18T21:22:16Z
 
 This major release includes significant new functionality along with important bug and documentation fixes, including contributions from @philippjfr (maintainer and lead developer), @xavArtley (VTK support), @jbednar (docs), @DancingQuanta (FileInput), @a-recknagel (Python 3.8 support, misc), @julwin (TextAreaInput, PasswordInput), @rs2 (example notebooks), @xtaje (default values), @Karamya (Audio widget), @ceball, @ahuang11 , @eddienko, @Jacob-Barhak, @jlstevens, @jsignell, @kleavor, @lsetiawan, @mattpap, @maxibor, and @RedBeardCode.
 
-Major enhancements:d
+Major enhancements:
 - Added pn.ipywidget() function for using panels and panes as ipwidgets, e.g. in voila ([#745](https://github.com/holoviz/panel/issues/745), [#755](https://github.com/holoviz/panel/issues/755), [#771](https://github.com/holoviz/panel/issues/771))
 - Greatly expanded and improved Pipeline, which now allows branching graphs ([#712](https://github.com/holoviz/panel/issues/712), [#735](https://github.com/holoviz/panel/issues/735), [#737](https://github.com/holoviz/panel/issues/737), [#770](https://github.com/holoviz/panel/issues/770))
 - Added streaming helper objects, including for the streamz package ([#767](https://github.com/holoviz/panel/issues/767), [#769](https://github.com/holoviz/panel/issues/769))
@@ -502,4 +582,3 @@ Bug fixes:
 ## Version 0.1.3
 
 Date: 2018-10-23T12:09:07Z
-

@@ -12,6 +12,7 @@ body {
 }
 
 #sidebar {
+  padding: 15px;
   transition: all 0.2s cubic-bezier(0.945, 0.020, 0.270, 0.665);
   transform-origin: center left; /* Set the transformed position of sidebar to center left side. */
   overflow-y: scroll;
@@ -65,6 +66,7 @@ img.app-logo {
   padding-right: 10px;
   font-size: 28px;
   height: 30px;
+  max-width: inherit;
 }
 
 p.bk.card-button {

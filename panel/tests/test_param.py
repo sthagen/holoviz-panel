@@ -1,17 +1,15 @@
-from __future__ import print_function
-
 import os
 
 import param
 
 from bokeh.models import (
-    Div, Slider, Select, RangeSlider, MultiSelect, Row as BkRow,
-    CheckboxGroup, Toggle, Button, TextInput as BkTextInput,
-    Tabs as BkTabs, Column as BkColumn, TextInput)
+    Div, Slider, Select, RangeSlider as BkRangeSlider, MultiSelect,
+    Row as BkRow, CheckboxGroup, Toggle, Button, TextInput as
+    BkTextInput,Tabs as BkTabs, Column as BkColumn, TextInput)
 from panel.pane import Pane, PaneBase, Matplotlib, Bokeh, HTML
 from panel.layout import Tabs, Row
 from panel.param import Param, ParamMethod, ParamFunction, JSONInit
-from panel.widgets import LiteralInput
+from panel.widgets import LiteralInput, RangeSlider
 from panel.tests.util import mpl_available, mpl_figure
 
 
@@ -221,7 +219,7 @@ def test_range_param(document, comm):
     model = test_pane.get_root(document, comm=comm)
 
     widget = model.children[1]
-    assert isinstance(widget, RangeSlider)
+    assert isinstance(widget, BkRangeSlider)
     assert widget.start == 0
     assert widget.end == 1.1
     assert widget.value == (0.1, 0.5)
@@ -625,6 +623,45 @@ def test_set_widgets(document, comm):
     assert isinstance(number, TextInput)
     assert number.height == 100
     assert isinstance(text, TextInput)
+
+
+def test_set_widgets_throttled(document, comm):
+    class Test(param.Parameterized):
+        a = param.Number(default=0, bounds=(0, 10), precedence=1)
+
+    test = Test()
+    pane = Param(test)
+    model = pane.get_root(document, comm=comm)
+
+    pane.widgets = {"a": {"throttled": False}}
+    assert len(model.children) == 2
+    _, number = model.children
+
+    number.value = 1
+    assert number.value == 1
+    assert number.value_throttled != 1
+    assert test.a == 1
+
+    test.a = 2
+    assert number.value == 2
+    assert number.value_throttled != 2
+    assert test.a == 2
+
+    # By setting throttled to true,
+    # `test.a` is linked to `number.value_throttled`
+    # instead of `number.value`.
+    pane.widgets = {"a": {"throttled": True}}
+    assert len(model.children) == 2
+    _, number = model.children
+
+    pane._widgets['a']._process_events({'value_throttled': 3})
+    assert number.value != 3
+    assert test.a == 3
+
+    pane._widgets['a']._process_events({'value': 4})
+    assert test.a == 3
+    assert number.value == 4
+
 
 def test_set_show_name(document, comm):
     class Test(param.Parameterized):
@@ -1143,3 +1180,25 @@ def test_change_object_and_keep_parameters():
     view.text = TextModel(text="New TextModel")
     # Then
     assert view.text_pane.parameters==["text"]
+
+
+def test_rerender_bounded_widget_when_bounds_set_and_unset():
+    class Test(param.Parameterized):
+        num = param.Range()
+
+    test = Test()
+    p = Param(test)
+
+    assert isinstance(p._widgets['num'], LiteralInput)
+    assert p._widgets['num'] in p._widget_box
+
+    test.param.num.bounds = (0, 5)
+
+    assert isinstance(p._widgets['num'], RangeSlider)
+    assert p._widgets['num'] in p._widget_box
+
+    test.param.num.bounds = (None, 5)
+
+    assert isinstance(p._widgets['num'], LiteralInput)
+    assert p._widgets['num'] in p._widget_box
+

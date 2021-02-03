@@ -8,6 +8,7 @@ import base64
 import logging # isort:skip
 
 from glob import glob
+from urllib.parse import urljoin
 
 from bokeh.command.subcommands.serve import Serve as _BkServe
 
@@ -16,6 +17,7 @@ from ..config import config
 from ..io.rest import REST_PROVIDERS
 from ..io.server import INDEX_HTML, get_static_routes
 from ..io.state import state
+from ..util import edit_readonly
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +137,12 @@ class Serve(_BkServe):
             else:
                 files.append(f)
 
+        prefix = args.prefix or ''
+        if not prefix.endswith('/'):
+            prefix += '/'
+        with edit_readonly(state):
+            state.base_url = urljoin('/', prefix)
+
         # Handle tranquilized functions in the supplied functions
         if args.rest_provider in REST_PROVIDERS:
             pattern = REST_PROVIDERS[args.rest_provider](files, args.rest_endpoint)
@@ -190,7 +198,13 @@ class Serve(_BkServe):
                 )
             elif args.oauth_encryption_key:
                 encryption_key = args.oauth_encryption_key.encode('ascii')
-                key = base64.urlsafe_b64decode(encryption_key)
+                try:
+                    key = base64.urlsafe_b64decode(encryption_key)
+                except Exception:
+                    raise ValueError("OAuth encryption key was not a valid base64 "
+                                     "string. Generate an encryption key with "
+                                     "`panel oauth-secret` and ensure you did not "
+                                     "truncate the returned string.")
                 if len(key) != 32:
                     raise ValueError(
                         "OAuth encryption key must be 32 url-safe "
