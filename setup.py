@@ -97,7 +97,7 @@ except Exception:
 ########## dependencies ##########
 
 install_requires = [
-    'bokeh >=2.3.0dev12',
+    'bokeh >=2.3.0dev13',
     'param >=1.10.0',
     'pyviz_comms >=0.7.4',
     'markdown',
@@ -108,7 +108,7 @@ install_requires = [
 
 _recommended = [
     'notebook >=5.4',
-    'holoviews >=1.13.2',
+    'holoviews >1.14.1',
     'matplotlib',
     'pillow',
     'plotly'
@@ -192,6 +192,13 @@ setup_args = dict(
     cmdclass=_COMMANDS,
     packages=find_packages(),
     include_package_data=True,
+    data_files=[
+        # like `jupyter serverextension enable --sys-prefix`
+        (
+            "etc/jupyter/jupyter_notebook_config.d",
+            ["jupyter-config/jupyter_notebook_config.d/panel-client-jupyter.json"],
+        ),
+    ],
     classifiers=[
         "License :: OSI Approved :: BSD License",
         "Development Status :: 5 - Production/Stable",

@@ -604,7 +604,9 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         -------
         Cloned Viewable object
         """
-        return type(self)(**dict(self.param.get_param_values(), **params))
+        inherited = {p: v for p, v in self.param.get_param_values()
+                     if not self.param[p].readonly}
+        return type(self)(**dict(inherited, **params))
 
     def pprint(self):
         """
