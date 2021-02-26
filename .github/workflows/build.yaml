@@ -15,7 +15,7 @@ jobs:
       run:
         shell: bash -l {0}
     env:
-      CHANS_DEV: "-c pyviz/label/dev -c bokeh/label/dev -c conda-forge"
+      CHANS_DEV: "-c pyviz/label/dev -c bokeh -c conda-forge"
       PKG_TEST_PYTHON: "--test-python=py38"
       PYTHON_VERSION: "3.8"
       MPLBACKEND: "Agg"
@@ -75,7 +75,7 @@ jobs:
       run:
         shell: bash -l {0}
     env:
-      CHANS_DEV: "-c pyviz/label/dev -c bokeh/label/dev -c conda-forge"
+      CHANS_DEV: "-c pyviz/label/dev -c bokeh -c conda-forge"
       PKG_TEST_PYTHON: "--test-python=py38"
       PYTHON_VERSION: "3.8"
       CHANS: "-c pyviz"
@@ -119,7 +119,7 @@ jobs:
         run: |
           eval "$(conda shell.bash hook)"
           conda activate test-environment
-          doit ecosystem=pip package_build $PKG_TEST_PYTHON --test-group=unit_deploy
+          doit ecosystem=pip package_build $PKG_TEST_PYTHON --test-group=flakes
       - name: git status
         run: |
           git status

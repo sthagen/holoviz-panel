@@ -97,7 +97,7 @@ except Exception:
 ########## dependencies ##########
 
 install_requires = [
-    'bokeh >=2.3.0dev13',
+    'bokeh >=2.3.0',
     'param >=1.10.0',
     'pyviz_comms >=0.7.4',
     'markdown',
@@ -126,7 +126,8 @@ _tests = [
     'ipympl',
     'twine',
     'pandas',
-    'ipython >=7.0'
+    'ipython >=7.0',
+    'holoviews'
 ]
 
 extras_require = {

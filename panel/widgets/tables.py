@@ -146,6 +146,8 @@ class BaseTable(ReactiveData, Widget):
                 col_kwargs['width'] = self.widths
             elif str(col) in self.widths:
                 col_kwargs['width'] = self.widths.get(str(col))
+            else:
+                col_kwargs['width'] = 0
 
             title = self.titles.get(col, str(col))
             if col in indexes and len(indexes) > 1 and self.hierarchical:
@@ -952,6 +954,7 @@ class Tabulator(BaseTable):
         props['layout'] = self.layout
         props['groupby'] = self.groupby
         props['hidden_columns'] = self.hidden_columns
+        props['editable'] = not self.disabled
         process = {'theme': self.theme, 'frozen_rows': self.frozen_rows}
         props.update(self._process_param_change(process))
         if self.pagination:
