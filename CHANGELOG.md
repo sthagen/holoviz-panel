@@ -1,5 +1,69 @@
 # Releases
 
+## Version 0.11.2
+
+Date: 2021-04-08
+
+The 0.11.2 release is a micro-release fixing a number of smaller bugs. Many thanks to @Hoxbro, @dhruvbalwada, @rmorshea, @MarcSkovMadsen, @fleming79, @OBITURASU and @philippjfr for their contributions to this release.
+
+Enhancements:
+
+- Optimize adding of roots to templates to avoid multiple preprocessing cycles ([#2096](https://github.com/holoviz/panel/issues/2096))
+- Use schema to support date(time) dtypes on `Perspective` ([#2130](https://github.com/holoviz/panel/issues/2130))
+
+Bug fixes:
+
+- Fix regression on `Video` pane causing video not to be rendered at all ([#2109](https://github.com/holoviz/panel/issues/2109))
+- Fix missing closing tag in Fast templates ([#2121](https://github.com/holoviz/panel/issues/2121))
+- Remove bootstrap CSS from `FastGridTemplate` ([#2123](https://github.com/holoviz/panel/issues/2123))
+- Ensure `Tabulator` selection can be set from Python ([#2128](https://github.com/holoviz/panel/issues/2128))
+- Ensure changes on ReactiveData objects are scheduled correctly on server ([#2134](https://github.com/holoviz/panel/issues/2134))
+- Fix for `Player` widget when start value is 0 ([#2141](https://github.com/holoviz/panel/issues/2141))
+- Support single quotes on JSON pane ([#2143](https://github.com/holoviz/panel/issues/2143))
+- Fix divide by zero issues when value_change is computed from zero baseline ([#2148](https://github.com/holoviz/panel/issues/2148))
+- Ensure `GridSpec` handles overrides across multiple cells ([#2150](https://github.com/holoviz/panel/issues/2150))
+- Fix for `loading` parameter widget linking ([#2160](https://github.com/holoviz/panel/issues/2160))
+- Use relative URLs for resource loading to ensure proxied apps work ([#2159](https://github.com/holoviz/panel/issues/2159))
+- Fix `Tabulator` ajax call on empty data ([#2161](https://github.com/holoviz/panel/issues/2161))
+
+Documentation:
+
+- Fix typo in Binder section of server deployment documentation ([#2118](https://github.com/holoviz/panel/issues/2118))
+- Improve documentation surrounding watch=True in Param user guide ([#2120](https://github.com/holoviz/panel/issues/2120))
+
+Compatibility:
+
+- Ensure IDOM pane configures paths correctly for latest version ([#2117](https://github.com/holoviz/panel/issues/2127), [#2132](https://github.com/holoviz/panel/issues/2132))
+
+## Version 0.11.1
+
+Date: 2021-03-15
+
+The 0.11.1 release is a micro-release addressing a number of smaller
+bugs in the last release. Many thanks to the contributors to this
+release including @Hoxbro, @xavArtley, @Jacob-Barhak and @philippjfr.
+
+Enhancements:
+
+- Allow setting horizontal and vertical alignment separately ([#2072](https://github.com/holoviz/panel/issues/2072))
+- Expose widgets `visible` property ([#2065](https://github.com/holoviz/panel/issues/2065))
+- Allow bind to extract dependencies and evaluate other dynamic functions ([#2056](https://github.com/holoviz/panel/issues/2056))
+- Allow setting `root_directory` on `FileSelector` widget ([#2086](https://github.com/holoviz/panel/issues/2086()
+
+Bug fixes:
+
+- Fixed loading of jQuery in `BootstrapTemplate` ([#2057](https://github.com/holoviz/panel/issues/2057))
+- Fix VTK imports to ensure `VTKVolume` pane renders grids ([#2071](https://github.com/holoviz/panel/issues/2071))
+- Fix loading of template resources from relative paths ([#2067](https://github.com/holoviz/panel/issues/2067))
+- Fix `Spinner` component overflow ([#2070](https://github.com/holoviz/panel/issues/2070))
+- Handle integer column names on `Perspective` widget ([#2069](https://github.com/holoviz/panel/issues/2069))
+- Fix bundling of template resources ([#2076](https://github.com/holoviz/panel/issues/2076))
+- Fix `value_throttled` in `pn.depends` decorator ([#2085](https://github.com/holoviz/panel/issues/2085))
+
+Compatibility:
+
+- Switch GitHub OAuth to use header authorization token ([#2073](https://github.com/holoviz/panel/issues/2073))
+
 ## Version 0.11.0
 
 Date: 2021-03-01

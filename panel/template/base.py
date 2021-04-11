@@ -8,7 +8,6 @@ import uuid
 
 from collections import OrderedDict
 from functools import partial
-from urllib.parse import urljoin
 
 import param
 
@@ -22,7 +21,7 @@ from pyviz_comms import JupyterCommManager as _JupyterCommManager
 from ..config import _base_config, config, panel_extension
 from ..io.model import add_to_doc
 from ..io.notebook import render_template
-from ..io.resources import CDN_DIST, LOCAL_DIST, DIST_DIR
+from ..io.resources import CDN_DIST, LOCAL_DIST, BUNDLE_DIR
 from ..io.save import save
 from ..io.state import state
 from ..layout import Column, ListLike, GridSpec
@@ -148,6 +147,7 @@ class BaseTemplate(param.Parameterized, ServableMixin):
         preprocess_root = col.get_root(doc, comm)
         col._hooks.append(self._apply_hooks)
         ref = preprocess_root.ref['id']
+        objs = []
 
         for name, (obj, tags) in self._render_items.items():
             if self._apply_hooks not in obj._hooks:
@@ -163,17 +163,18 @@ class BaseTemplate(param.Parameterized, ServableMixin):
                 sub._models[ref] = submodel
                 if isinstance(sub, HoloViews) and mref in sub._plots:
                     sub._plots[ref] = sub._plots.get(mref)
-            col.objects.append(obj)
             obj._documents[doc] = model
             model.name = name
             model.tags = tags
             self._apply_root(name, model, tags)
             add_to_doc(model, doc, hold=bool(comm))
+            objs.append(obj)
 
         # Here we ensure that the preprocessor is run across all roots
         # and set up session cleanup hooks for the fake root.
         state._fake_roots.append(ref)
         state._views[ref] = (col, preprocess_root, doc, comm)
+        col.objects = objs
         col._preprocess(preprocess_root)
         col._documents[doc] = preprocess_root
         doc.on_session_destroyed(col._server_destroy)
@@ -401,15 +402,27 @@ class BasicTemplate(BaseTemplate):
 
     location = param.Boolean(default=True, readonly=True)
 
+    #############
+    # Resources #
+    #############
+
+    # Resource locations for bundled resources
+    _CDN = CDN_DIST
+    _LOCAL = LOCAL_DIST
+
+    # pathlib.Path pointing to local CSS file(s)
     _css = None
 
+    # pathlib.Path pointing to local JS file(s)
     _js = None
 
+    # pathlib.Path pointing to local Jinja2 template
     _template = None
 
-    _modifiers = {}
-
+    # External resources
     _resources = {'css': {}, 'js': {}, 'js_modules': {}, 'tarball': {}}
+
+    _modifiers = {}
 
     __abstract = True
 
@@ -462,24 +475,25 @@ class BasicTemplate(BaseTemplate):
     def _template_resources(self):
         name = type(self).__name__.lower()
         resources = _settings.resources(default="server")
-        base_url = state.base_url[1:] if state.base_url.startswith('/') else state.base_url        
         if resources == 'server':
-            dist_path = urljoin(base_url, LOCAL_DIST)
+            if state.rel_path:
+                dist_path = f'{state.rel_path}/{self._LOCAL}'
+            else:
+                dist_path = self._LOCAL
         else:
-            dist_path = CDN_DIST
+            dist_path = self._CDN
 
         # External resources
         css_files = dict(self._resources.get('css', {}))
         for cssname, css in css_files.items():
             css_path = url_path(css)
-            css_files[cssname] = dist_path + f'bundled/css/{css_path}'
+            if (BUNDLE_DIR / 'css' / css_path.replace('/', os.path.sep)).is_file():
+                css_files[cssname] = dist_path + f'bundled/css/{css_path}'
         js_files = dict(self._resources.get('js', {}))
         for jsname, js in js_files.items():
             js_path = url_path(js)
-            js_files[jsname] = dist_path + f'bundled/js/{js_path}'
-        if self._js:
-            js_file = os.path.basename(self._js)
-            js_files[f'base_{js_file}'] = dist_path + f'bundled/{name}/{js_file}'
+            if (BUNDLE_DIR / 'js' / js_path.replace('/', os.path.sep)).is_file():
+                js_files[jsname] = dist_path + f'bundled/js/{js_path}'
         js_modules = dict(self._resources.get('js_modules', {}))
         for jsname, js in js_modules.items():
             js_path = url_path(js)
@@ -487,33 +501,73 @@ class BasicTemplate(BaseTemplate):
                 js_path += '/index.mjs'
             else:
                 js_path += '.mjs'
-            if os.path.isfile(DIST_DIR / 'bundled' / 'js' / js_path.replace('/', os.path.sep)):
+            if os.path.isfile(BUNDLE_DIR / js_path.replace('/', os.path.sep)):
                 js_modules[jsname] = dist_path + f'bundled/js/{js_path}'
-        js_files.update(self.config.js_files)
-        js_modules.update(self.config.js_modules)
-        extra_css = list(self.config.css_files)
+        for name, js in self.config.js_files.items():
+            if not '//' in js and state.rel_path:
+                js = f'{state.rel_path}/{js}'
+            js_files[name] = js
+        for name, js in self.config.js_modules.items():
+            if not '//' in js and state.rel_path:
+                js = f'{state.rel_path}/{js}'
+            js_modules[name] = js
+        extra_css = []
+        for css in list(self.config.css_files):
+            if not '//' in css and state.rel_path:
+                css = f'{state.rel_path}/{css}'
+            extra_css.append(css)
         raw_css = list(self.config.raw_css)
 
         # CSS files
-        base_css = self._css if isinstance(self._css, list) else [self._css]
+        base_css = self._css
+        if not isinstance(base_css, list):
+            base_css = [base_css] if base_css else []
         for css in base_css:
             tmpl_name = name
-            for cls in type(self).__mro__[2:-5]:
+            for cls in type(self).__mro__[1:-5]:
                 tmpl_css = cls._css if isinstance(cls._css, list) else [cls._css]
                 if css in tmpl_css:
                     tmpl_name = cls.__name__.lower()
-            css = os.path.basename(css)
-            css_files[f'base_{css}'] = dist_path + f'bundled/{tmpl_name}/{css}'
+            css_file = os.path.basename(css)
+            if (BUNDLE_DIR / tmpl_name / css_file).is_file():
+                css_files[f'base_{css_file}'] = dist_path + f'bundled/{tmpl_name}/{css_file}'
+            else:
+                with open(css, encoding='utf-8') as f:
+                    raw_css.append(f.read())
+
+        # JS files
+        base_js = self._js
+        if not isinstance(base_js, list):
+            base_js = [base_js] if base_js else []
+        for js in base_js:
+            tmpl_name = name
+            for cls in type(self).__mro__[1:-5]:
+                tmpl_js = cls._js if isinstance(cls._js, list) else [cls._js]
+                if js in tmpl_js:
+                    tmpl_name = cls.__name__.lower()
+            js = os.path.basename(js)
+            if (BUNDLE_DIR / tmpl_name / js).is_file():
+                js_files[f'base_{js}'] = dist_path + f'bundled/{tmpl_name}/{js}'
+
         if self.theme:
             theme = self.theme.find_theme(type(self))
             if theme:
                 if theme.base_css:
                     basename = os.path.basename(theme.base_css)
                     owner = theme.param.base_css.owner.__name__.lower()
-                    css_files['theme_base'] = dist_path + f'bundled/{owner}/{basename}'
+                    if (BUNDLE_DIR / owner / basename).is_file():
+                        css_files['theme_base'] = dist_path + f'bundled/{owner}/{basename}'
+                    else:
+                        with open(theme.base_css, encoding='utf-8') as f:
+                            raw_css.append(f.read())
                 if theme.css:
                     basename = os.path.basename(theme.css)
-                    css_files['theme'] = dist_path + f'bundled/{name}/{basename}'
+                    if (BUNDLE_DIR / name / basename).is_file():
+                        css_files['theme'] = dist_path + f'bundled/{name}/{basename}'
+                    else:
+                        with open(theme.base_css, encoding='utf-8') as f:
+                            raw_css.append(f.read())
+
         return {
             'css': css_files,
             'extra_css': extra_css,

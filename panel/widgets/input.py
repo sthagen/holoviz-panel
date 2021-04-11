@@ -11,6 +11,7 @@ from six import string_types
 
 import param
 
+from bokeh.models.formatters import TickFormatter
 from bokeh.models.widgets import (
     CheckboxGroup as _BkCheckboxGroup, ColorPicker as _BkColorPicker,
     DatePicker as _BkDatePicker, Div as _BkDiv, TextInput as _BkTextInput,
@@ -19,8 +20,9 @@ from bokeh.models.widgets import (
     NumericInput as _BkNumericInput)
 
 from ..layout import Column
-from ..util import as_unicode
+from ..util import param_reprs, as_unicode
 from .base import Widget, CompositeWidget
+from ..models import DatetimePicker as _bkDatetimePicker
 
 
 class TextInput(Widget):
@@ -160,6 +162,118 @@ class DatePicker(Widget):
         return msg
 
 
+class _DatetimePickerBase(Widget):
+
+    start = param.CalendarDate(default=None)
+
+    end = param.CalendarDate(default=None)
+
+    disabled_dates = param.List(default=None, class_=(date, str))
+
+    enabled_dates = param.List(default=None, class_=(date, str))
+
+    enable_time = param.Boolean(default=True)
+
+    enable_seconds = param.Boolean(default=True)
+
+    military_time = param.Boolean(default=True)
+
+    _source_transforms = {'value': None, 'start': None, 'end': None, 'mode': None}
+
+    _rename = {'start': 'min_date', 'end': 'max_date', 'name': 'title'}
+
+    _widget_type = _bkDatetimePicker
+
+    __abstract = True
+
+    def __init__(self, **params):
+        super().__init__(**params)
+        self._update_value_bounds()
+
+    @staticmethod
+    def _date_to_datetime(x):
+        if isinstance(x, date):
+            return datetime(x.year, x.month, x.day)
+
+    @param.depends('start', 'end', watch=True)
+    def _update_value_bounds(self):
+        self.param.value.bounds = (
+            self._date_to_datetime(self.start),
+            self._date_to_datetime(self.end),
+        )
+        self.param.value._validate(self.value)
+
+    def _process_property_change(self, msg):
+        msg = super()._process_property_change(msg)
+        if 'value' in msg:
+            msg['value'] = self._serialize_value(msg['value'])
+        return msg
+
+    def _process_param_change(self, msg):
+        msg = super()._process_param_change(msg)
+        if 'value' in msg:
+            msg['value'] = self._deserialize_value(msg['value'])
+        return msg
+
+
+class DatetimePicker(_DatetimePickerBase):
+
+    value = param.Date(default=None)
+
+    mode = param.String('single', constant=True)
+
+    def _serialize_value(self, value):
+        if isinstance(value, string_types) and value:
+            value = datetime.strptime(value, r'%Y-%m-%d %H:%M:%S')
+
+            # Hour, minute and seconds can be increased after end is reached.
+            # This forces the hours, minute and second to be 0.
+            end = self._date_to_datetime(self.end)
+            if end is not None and value > end:
+                value = end
+
+        return value
+
+    def _deserialize_value(self, value):
+        if isinstance(value, (datetime, date)):
+            value = value.strftime(r'%Y-%m-%d %H:%M:%S')
+
+        return value
+
+
+class DatetimeRangePicker(_DatetimePickerBase):
+    value = param.DateRange(default=None)
+
+    mode = param.String('range', constant=True)
+
+    def _serialize_value(self, value):
+        if isinstance(value, string_types) and value:
+            value = [
+                datetime.strptime(value, r'%Y-%m-%d %H:%M:%S')
+                for value in value.split(' to ')
+            ]
+
+            # Hour, minute and seconds can be increased after end is reached.
+            # This forces the hours, minute and second to be 0.
+            end = self._date_to_datetime(self.end)
+            if end is not None and value[0] > end:
+                value[0] = end
+            if end is not None and value[1] > end:
+                value[1] = end
+
+            value = tuple(value)
+
+        return value
+
+    def _deserialize_value(self, value):
+        if isinstance(value, tuple):
+            value = " to ".join(v.strftime(r'%Y-%m-%d %H:%M:%S') for v in value)
+        if value is None:
+            value = ""
+
+        return value
+
+
 class ColorPicker(Widget):
 
     value = param.Color(default=None, doc="""
@@ -178,8 +292,8 @@ class _NumericInputBase(Widget):
     placeholder = param.String(default='0', doc="""
         Placeholder for empty input field.""")
 
-    format = param.String(default=None, allow_None=True, doc="""
-        Number formating : http://numbrojs.com/old-format.html .""")
+    format = param.ClassSelector(default=None, class_=string_types+(TickFormatter,), doc="""
+        Allows defining a custom format string or bokeh TickFormatter.""")
 
     _rename = {'name': 'title', 'start': 'low', 'end': 'high'}
 
@@ -245,6 +359,16 @@ class _SpinnerBase(_NumericInputBase):
             params['value_throttled'] = params['value']
         super().__init__(**params)
 
+    def __repr__(self, depth=0):
+        return '{cls}({params})'.format(cls=type(self).__name__,
+                                        params=', '.join(param_reprs(self, ['value_throttled'])))
+
+    def _update_model(self, events, msg, root, model, doc, comm):
+        if 'value_throttled' in msg:
+            del msg['value_throttled']
+
+        return super()._update_model(events, msg, root, model, doc, comm)
+
 
 class IntInput(_SpinnerBase, _IntInputBase):
 
@@ -252,17 +376,12 @@ class IntInput(_SpinnerBase, _IntInputBase):
 
     value_throttled = param.Integer(default=None, constant=True)
 
-    _rename = dict(_NumericInputBase._rename, value_throttled=None)
-
-
 
 class FloatInput(_SpinnerBase, _FloatInputBase):
 
     step = param.Number(default=0.1)
 
     value_throttled = param.Number(default=None, constant=True)
-
-    _rename = dict(_NumericInputBase._rename, value_throttled=None)
 
 
 class NumberInput(_SpinnerBase):

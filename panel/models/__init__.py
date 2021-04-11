@@ -5,11 +5,13 @@ defined as pairs of Python classes and TypeScript models defined in .ts
 files.
 """
 
+from .datetime_picker import DatetimePicker  # noqa
 from .idom import IDOM # noqa
 from .ipywidget import IPyWidget # noqa
 from .layout import Card # noqa
 from .location import Location # noqa
 from .markup import JSON, HTML # noqa
+from .reactive_html import ReactiveHTML # noqa
 from .state import State # noqa
 from .tabulator import DataTabulator # noqa
 from .trend import TrendIndicator # noqa

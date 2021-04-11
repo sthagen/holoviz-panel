@@ -84,7 +84,6 @@ class DataFrame(HTML):
     DataFrame renders pandas, dask and streamz DataFrame types using
     their custom HTML repr. In the case of a streamz DataFrame the
     rendered data will update periodically.
-
     """
 
     bold_rows = param.Boolean(default=True, doc="""
@@ -339,10 +338,11 @@ class JSON(DivPaneBase):
 
     def _get_properties(self):
         properties = super()._get_properties()
-        if isinstance(self.object, string_types):
-            text = self.object
-        else:
-            text = json.dumps(self.object or {}, cls=self.encoder)
+        try:
+            data = json.loads(self.object)
+        except Exception:
+            data = self.object
+        text = json.dumps(data or {}, cls=self.encoder)
         depth = None if self.depth < 0 else self.depth
         return dict(text=text, theme=self.theme, depth=depth,
                     hover_preview=self.hover_preview, **properties)

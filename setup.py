@@ -103,13 +103,14 @@ install_requires = [
     'markdown',
     'requests',
     'tqdm',
-    'pyct >=0.4.4'
+    'pyct >=0.4.4',
+    'bleach'
 ]
 
 _recommended = [
     'notebook >=5.4',
     'holoviews >1.14.1',
-    'matplotlib',
+    'matplotlib <3.4',
     'pillow',
     'plotly'
 ]
@@ -175,7 +176,8 @@ extras_require['build'] = [
     'pyct >=0.4.4',
     'setuptools >=30.3.0',
     'bokeh >=2.0.0',
-    'pyviz_comms >=0.6.0'
+    'pyviz_comms >=0.6.0',
+    'bleach'
 ]
 
 setup_args = dict(

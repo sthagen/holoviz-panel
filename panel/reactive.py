@@ -8,23 +8,28 @@ import difflib
 import sys
 import threading
 
-from collections import namedtuple
+from collections import Counter, defaultdict, namedtuple
 from functools import partial
 
+import bleach
 import numpy as np
 import param
 
 from bokeh.models import LayoutDOM
+from param.parameterized import ParameterizedMetaclass
 from tornado import gen
 
 from .config import config
 from .io.callbacks import PeriodicCallback
 from .io.model import hold
-from .io.notebook import push, push_on_root
+from .io.notebook import push
 from .io.server import unlocked
 from .io.state import state
-from .util import edit_readonly, updating
-from .viewable import Renderable, Viewable
+from .models.reactive_html import (
+    ReactiveHTML as _BkReactiveHTML, ReactiveHTMLParser, construct_data_model
+)
+from .util import edit_readonly, escape, updating
+from .viewable import Layoutable, Renderable, Viewable
 
 LinkWatcher = namedtuple("Watcher","inst cls fn mode onlychanged parameter_names what queued target links transformed bidirectional_watcher")
 
@@ -183,6 +188,19 @@ class Syncable(Renderable):
                 else:
                     cb()
 
+    def _apply_update(self, events, msg, model, ref):
+        if ref not in state._views or ref in state._fake_roots:
+            return
+        viewable, root, doc, comm = state._views[ref]
+        if comm or not doc.session_context or state._unblocked(doc):
+            with unlocked():
+                self._update_model(events, msg, root, model, doc, comm)
+            if comm and 'embedded' not in root.tags:
+                push(doc, comm)
+        else:
+            cb = partial(self._update_model, events, msg, root, model, doc, comm)
+            doc.add_next_tick_callback(cb)
+
     def _update_model(self, events, msg, root, model, doc, comm):
         self._changing[root.ref['id']] = [
             attr for attr, value in msg.items()
@@ -222,17 +240,7 @@ class Syncable(Renderable):
             return
 
         for ref, (model, parent) in self._models.items():
-            if ref not in state._views or ref in state._fake_roots:
-                continue
-            viewable, root, doc, comm = state._views[ref]
-            if comm or not doc.session_context or state._unblocked(doc):
-                with unlocked():
-                    self._update_model(events, msg, root, model, doc, comm)
-                if comm and 'embedded' not in root.tags:
-                    push(doc, comm)
-            else:
-                cb = partial(self._update_model, events, msg, root, model, doc, comm)
-                doc.add_next_tick_callback(cb)
+            self._apply_update(events, msg, model, ref)
 
     def _process_events(self, events):
         with edit_readonly(state):
@@ -279,7 +287,10 @@ class Syncable(Renderable):
         self._events.update({attr: new})
         if not processing:
             if doc.session_context:
-                doc.add_timeout_callback(partial(self._change_coroutine, doc), self._debounce)
+                doc.add_timeout_callback(
+                    partial(self._change_coroutine, doc),
+                    self._debounce
+                )
             else:
                 self._change_event(doc)
 
@@ -572,7 +583,6 @@ class Reactive(Syncable, Viewable):
                     bidirectional=bidirectional)
 
 
-
 class SyncableData(Reactive):
     """
     A baseclass for components which sync one or more data parameters
@@ -582,7 +592,7 @@ class SyncableData(Reactive):
     selection = param.List(default=[], doc="""
         The currently selected rows in the data.""")
 
-    # Parameters which when changed require an update of the data 
+    # Parameters which when changed require an update of the data
     _data_params = []
 
     _rename = {'selection': None}
@@ -644,33 +654,49 @@ class SyncableData(Reactive):
             elif hasattr(self, '_update_' + event.name):
                 getattr(self, '_update_' + event.name)(model)
 
+    @updating
     def _update_cds(self, *events):
-        if self._updating:
-            return
         self._processed, self._data = self._get_data()
+        msg = {'data': self._data}
         for ref, (m, _) in self._models.items():
-            m.source.data = self._data
-            push_on_root(ref)
+            self._apply_update(events, msg, m.source, ref)
 
+    @updating
     def _update_selected(self, *events, indices=None):
-        if self._updating:
-            return
         indices = self.selection if indices is None else indices
+        msg = {'indices': indices}
         for ref, (m, _) in self._models.items():
-            m.source.selected.indices = indices
-            push_on_root(ref)
+            self._apply_update(events, msg, m.source.selected, ref)
 
     @updating
     def _stream(self, stream, rollover=None):
         for ref, (m, _) in self._models.items():
-            m.source.stream(stream, rollover)
-            push_on_root(ref)
+            if ref not in state._views or ref in state._fake_roots:
+                continue
+            viewable, root, doc, comm = state._views[ref]
+            if comm or not doc.session_context or state._unblocked(doc):
+                with unlocked():
+                    m.source.stream(stream, rollover)
+                if comm and 'embedded' not in root.tags:
+                    push(doc, comm)
+            else:
+                cb = partial(m.source.stream, stream, rollover)
+                doc.add_next_tick_callback(cb)
 
     @updating
     def _patch(self, patch):
         for ref, (m, _) in self._models.items():
-            m.source.patch(patch)
-            push_on_root(ref)
+            if ref not in state._views or ref in state._fake_roots:
+                continue
+            viewable, root, doc, comm = state._views[ref]
+            if comm or not doc.session_context or state._unblocked(doc):
+                with unlocked():
+                    m.source.patch(patch)
+                if comm and 'embedded' not in root.tags:
+                    push(doc, comm)
+            else:
+                cb = partial(m.source.patch, patch)
+                doc.add_next_tick_callback(cb)
 
     def stream(self, stream_value, rollover=None, reset_index=True):
         """
@@ -750,11 +776,7 @@ class SyncableData(Reactive):
                 self.param.trigger(self._data_params[0])
             finally:
                 self._updating = False
-            try:
-                self._updating = True
-                self._stream(stream_value, rollover)
-            finally:
-                self._updating = False
+            self._stream(stream_value, rollover)
         elif pd and isinstance(stream_value, pd.Series):
             if isinstance(self._processed, dict):
                 self.stream({k: [v] for k, v in stream_value.to_dict().items()}, rollover)
@@ -763,11 +785,7 @@ class SyncableData(Reactive):
             self._processed.loc[value_index_start] = stream_value
             with param.discard_events(self):
                 self._update_data(self._processed)
-            self._updating = True
-            try:
-                self._stream(self._processed.iloc[-1:], rollover)
-            finally:
-                self._updating = False
+            self._stream(self._processed.iloc[-1:], rollover)
         elif isinstance(stream_value, dict):
             if isinstance(self._processed, dict):
                 if not all(col in stream_value for col in self._data):
@@ -777,11 +795,7 @@ class SyncableData(Reactive):
                     if rollover is not None:
                         combined = combined[-rollover:]
                     self._update_column(col, combined)
-                self._updating = True
-                try:
-                    self._stream(stream_value, rollover)
-                finally:
-                    self._updating = False
+                self._stream(stream_value, rollover)
             else:
                 try:
                     stream_value = pd.DataFrame(stream_value)
@@ -927,3 +941,446 @@ class ReactiveData(SyncableData):
             finally:
                 self._updating = False
         super(ReactiveData, self)._process_events(events)
+
+
+
+class ReactiveHTMLMetaclass(ParameterizedMetaclass):
+    """
+    Parses the ReactiveHTML._template of the class and initializes
+    variables, callbacks and the data model to sync the parameters and
+    HTML attributes.
+    """
+
+    _name_counter = Counter()
+
+    def __init__(mcs, name, bases, dict_):
+        mcs.__original_doc__ = mcs.__doc__
+        ParameterizedMetaclass.__init__(mcs, name, bases, dict_)
+        for name, child_type in mcs._child_config.items():
+            if name not in mcs.param:
+                raise ValueError(f"Config for '{name}' does not match any parameters.")
+            elif child_type not in ('model', 'template', 'literal'):
+                raise ValueError(f"Config for {name} child parameter declares "
+                                 f"unknown type '{child_type}'. Children must "
+                                 "declare either 'model', 'template' or 'literal'"
+                                 "type.")
+
+        mcs._parser = ReactiveHTMLParser(mcs)
+        mcs._parser.feed(mcs._template)
+        mcs._attrs, mcs._node_callbacks = {}, {}
+        mcs._inline_callbacks = []
+        for node, attrs in mcs._parser.attrs.items():
+            for (attr, parameters, template) in attrs:
+                param_attrs = []
+                for p in parameters:
+                    if p in mcs.param:
+                        param_attrs.append(p)
+                    elif hasattr(mcs, p):
+                        if node not in mcs._node_callbacks:
+                            mcs._node_callbacks[node] = []
+                        mcs._node_callbacks[node].append((attr, p))
+                        mcs._inline_callbacks.append((node, attr, p))
+                    else:
+                        matches = difflib.get_close_matches(p, dir(mcs))
+                        raise ValueError("HTML template references unknown "
+                                         f"parameter or method '{p}', "
+                                         "similar parameters and methods "
+                                         f"include {matches}.")
+                if node not in mcs._attrs:
+                    mcs._attrs[node] = []
+                mcs._attrs[node].append((attr, param_attrs, template))
+        ignored = list(Reactive.param)+list(mcs._parser.children.values())
+        ignored.remove('name')
+
+        # Create model with unique name
+        ReactiveHTMLMetaclass._name_counter[name] += 1
+        model_name = f'{name}{ReactiveHTMLMetaclass._name_counter[name]}'
+        mcs._data_model = construct_data_model(mcs, name=model_name, ignore=ignored)
+
+
+
+class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
+    """
+    ReactiveHTML provides bi-directional syncing of arbitrary HTML
+    attributes and DOM properties with parameters on the subclass.
+
+    HTML templates
+    ~~~~~~~~~~~~~~
+
+    A ReactiveHTML component is declared by providing an HTML template
+    on the `_template` attribute on the class. Parameters are synced by
+    inserting them as template variables of the form `${parameter}`,
+    e.g.:
+
+        <div class="${div_class}">${children}</div>
+
+    will interpolate the div_class parameter on the class. In addition
+    to providing attributes we can also provide children to an HTML
+    tag. By default any parameter referenced as a child will be
+    treated as a Panel components to be rendered into the containing
+    HTML. This makes it possible to use ReactiveHTML to lay out other
+    components.
+
+    Children
+    ~~~~~~~~
+
+    As mentioned above parameters may be referenced as children of a
+    DOM node and will, by default, be treated as Panel components to
+    insert on the DOM node. However by declaring a `_child_config` we
+    can control how the DOM nodes are treated. The `_child_config` is
+    indexed by parameter name and may declare one of three rendering
+    modes:
+
+      - model (default): Create child and render child as a Panel
+        component into it.
+      - literal: Create child and set child as its innerHTML.
+      - template: Set child as innerHTML of the container.
+
+    If the type is 'template' the parameter will be inserted as is and
+    the DOM node's innerHTML will be synced with the child parameter.
+
+    DOM Events
+    ~~~~~~~~~~
+
+    In certain cases it is necessary to explicitly declare event
+    listeners on the DOM node to ensure that changes in their
+    properties are synced when an event is fired. To make this possible
+    the HTML element in question must be given a unique id, e.g.:
+
+        <input id="input"></input>
+
+    Now we can use this name to declare set of `_dom_events` to
+    subscribe to. The following will subscribe to change DOM events
+    on the input element:
+
+       {'input': ['change']}
+
+    Once subscribed the class may also define a method following the
+    `_{node}_{event}` naming convention which will fire when the DOM
+    event triggers, e.g. we could define a `_input_change` method.
+    Any such callback will be given a DOMEvent object as the first and
+    only argument. The DOMEvent contains information about the event
+    on the .data attribute and declares the type of event on the .type
+    attribute.
+
+    Inline callbacks
+    ~~~~~~~~~~~~~~~~
+
+    Instead of declaring explicit DOM events Python callbacks can also
+    be declared inline, e.g.:
+
+        <input id="input" onchange="${_input_change}"></input>
+
+    will look for an `_input_change` method on the ReactiveHTML
+    component and call it when the event is fired.
+
+    Scripts
+    ~~~~~~~
+
+    In addition to declaring callbacks in Python it is also possible
+    to declare Javascript callbacks to execute when any synced
+    attribute changes. Let us say we have declared an input element
+    with a synced value parameter:
+
+        <input id="input" value="${value}"></input>
+
+    We can now declare a set of `_scripts`, which will fire whenever
+    the value updates:
+
+        _scripts = {
+            'value': ['console.log(model, data, input)']
+       }
+
+    The Javascript is provided multiple objects in its namespace
+    including:
+
+      * data :  The data model holds the current values of the synced
+                parameters, e.g. data.value will reflect the current
+                value of the input node.
+      * model:  The ReactiveHTML model which holds layout information
+                and information about the children and events.
+      * state:  An empty state dictionary which scripts can use to
+                store state for the lifetime of the view.
+      * <node>: All named DOM nodes in the HTML template, e.g. the
+                `input` node in the example above.
+    """
+
+    _child_config = {}
+
+    _dom_events = {}
+
+    _template = ""
+
+    _scripts = {}
+
+    __abstract = True
+
+    def __init__(self, **params):
+        from .pane import panel
+        for children_param in self._parser.children.values():
+            mode = self._child_config.get(children_param, 'model')
+            if children_param not in params or mode != 'model':
+                continue
+            child_value = params[children_param]
+            if isinstance(child_value, list):
+                children = []
+                for pane in child_value:
+                    if isinstance(pane, tuple):
+                        name, pane = pane
+                        children.append((name, panel(pane)))
+                    else:
+                        children.append(panel(pane))
+                params[children_param] = children
+            else:
+                params[children_param] = panel(child_value)
+        super().__init__(**params)
+        self._event_callbacks = defaultdict(lambda: defaultdict(list))
+
+    def _cleanup(self, root):
+        for children_param in self._parser.children.values():
+            children = getattr(self, children_param)
+            mode = self._child_config.get(children_param)
+            if mode != 'model':
+                continue
+            if isinstance(children, dict):
+                children = children.values()
+            elif not isinstance(children, list):
+                children = [children]
+            for child in children:
+                child._cleanup(root)
+        super()._cleanup(root)
+
+    @property
+    def _linkable_params(self):
+        return [p for p in super()._linkable_params if p not in self._parser.children.values()]
+
+    @property
+    def _child_names(self):
+        return {}
+
+    def _process_children(self, doc, root, model, comm, children):
+        return children
+
+    def _init_params(self):
+        ignored = list(Reactive.param)+list(self._parser.children.values())
+        params = {
+            p : getattr(self, p) for p in list(Layoutable.param)
+            if getattr(self, p) is not None and p != 'name'
+        }
+        data_params = {}
+        for k, v in self.param.get_param_values():
+            if (k in ignored and k != 'name') or ((self.param[k].precedence or 0) < 0):
+                continue
+            if isinstance(v, str):
+                v = bleach.clean(v)
+            data_params[k] = v
+        params['attrs'] = self._attrs
+        params['callbacks'] = self._node_callbacks
+        params['data'] = self._data_model(**self._process_param_change(data_params))
+        params['events'] = self._get_events()
+        params['html'] = escape(self._get_template())
+        params['nodes'] = self._parser.nodes
+        params['looped'] = [node for node, _ in self._parser.looped]
+        params['scripts'] = {
+            trigger: [escape(script) for script in scripts]
+            for trigger, scripts in self._scripts.items()
+        }
+        return params
+
+    def _get_events(self):
+        events = {}
+        for node, node_events in self._dom_events.items():
+            if isinstance(node_events, list):
+                events[node] = {e: True for e in node_events}
+            else:
+                events[node] = node_events
+        for node, evs in self._event_callbacks.items():
+            events[node] = node_events = events.get(node, {})
+            for e in evs:
+                if e not in node_events:
+                    node_events[e] = False
+        return events
+
+    def _get_children(self, doc, root, model, comm, old_children=None):
+        from .pane import panel
+        old_children = old_children or {}
+        old_models = model.children
+        new_models = {parent: [] for parent in self._parser.children}
+
+        for parent, children_param in self._parser.children.items():
+            mode = self._child_config.get(children_param, 'model')
+            if mode == 'literal':
+                continue
+            panes = getattr(self, children_param)
+            if not isinstance(panes, (list, dict)):
+                panes = [panes]
+            if isinstance(panes, dict):
+                for key, value in panes.items():
+                    panes[key] = panel(value)
+            else:
+                for i, pane in enumerate(panes):
+                    panes[i] = panel(pane)
+
+        for children_param, old_panes in old_children.items():
+            mode = self._child_config.get(children_param, 'model')
+            if mode == 'literal':
+                continue
+            new_panes = getattr(self, children_param)
+            if not isinstance(new_panes, (list, dict)):
+                new_panes = [new_panes]
+                old_panes = [old_panes]
+            elif isinstance(new_panes, dict):
+                new_panes = new_panes.values()
+            for old_pane in old_panes:
+                if old_pane not in new_panes:
+                    old_pane._cleanup(root)
+
+        for parent, children_param in self._parser.children.items():
+            new_panes = getattr(self, children_param)
+            if not isinstance(new_panes, (list, dict)):
+                new_panes = [new_panes]
+            if isinstance(new_panes, dict):
+                new_panes = (new_panes.values())
+            mode = self._child_config.get(children_param, 'model')
+            if mode == 'literal':
+                new_models[parent] = new_panes
+            elif children_param in old_children:
+                # Find existing models
+                old_panes = old_children[children_param]
+                if not isinstance(old_panes, (list, dict)):
+                    old_panes = [old_panes]
+                for i, pane in enumerate(new_panes):
+                    if pane in old_panes and root.ref['id'] in pane._models:
+                        child, _ = pane._models[root.ref['id']]
+                    else:
+                        child = pane._get_model(doc, root, model, comm)
+                    new_models[parent].append(child)
+            elif parent in old_models:
+                # Children parameter unchanged
+                new_models[parent] = old_models[parent]
+            else:
+                new_models[parent] = [
+                    pane._get_model(doc, root, model, comm)
+                    for pane in new_panes
+                ]
+        return self._process_children(doc, root, model, comm, new_models)
+
+    def _get_template(self):
+        import jinja2
+        template = jinja2.Template(self._template)
+        context = {'param': self.param, '__doc__': self.__original_doc__}
+        for parameter, value in self.param.get_param_values():
+            context[parameter] = value
+            if parameter in self._child_names:
+                context[f'{parameter}_names'] = self._child_names[parameter]
+        html = template.render(context)
+        parser = ReactiveHTMLParser(self.__class__)
+        parser.feed(html)
+        for name in list(parser.nodes):
+            html = (
+                html
+                .replace(f"id='{name}'", f"id='{name}-${{id}}'")
+                .replace(f'id="{name}"', f'id="{name}-${{id}}"')
+            )
+        for parent, child_name in self._parser.children.items():
+            if (parent, child_name) in self._parser.looped:
+                for i, _ in enumerate(getattr(self, child_name)):
+                    html = html.replace('${%s[%d]}' % (child_name, i), '')
+            else:
+                html = html.replace('${%s}' % child_name, '')
+        return html
+
+    def _get_model(self, doc, root=None, parent=None, comm=None):
+        properties = self._process_param_change(self._init_params())
+        model = _BkReactiveHTML(**properties)
+        if not root:
+            root = model
+        model.children = self._get_children(doc, root, model, comm)
+        model.on_event('dom_event', self._process_event)
+
+        linked_properties = [p for pss in self._attrs.values() for _, ps, _ in pss for p in ps]
+        self._link_props(model.data, linked_properties, doc, root, comm)
+
+        self._models[root.ref['id']] = (model, parent)
+        return model
+
+    def _process_event(self, event):
+        cb = getattr(self, f"_{event.node}_{event.data['type']}", None)
+        if cb is not None:
+            cb(event)
+        event_type = event.data['type']
+        star_cbs = self._event_callbacks.get('*', {})
+        node_cbs = self._event_callbacks.get(event.node, {})
+        inline_cbs = {attr: [getattr(self, p)] for node, attr, p in self._inline_callbacks
+                      if node == event.node}
+        event_cbs = (
+            node_cbs.get(event_type, []) + node_cbs.get('*', []) +
+            star_cbs.get(event_type, []) + star_cbs.get('*', []) +
+            inline_cbs.get(event_type, [])
+        )
+        for cb in event_cbs:
+            cb(event)
+
+    def _set_on_model(self, msg, root, model):
+        if not msg:
+            return
+        self._changing[root.ref['id']] = [
+            attr for attr, value in msg.items()
+            if not model.lookup(attr).property.matches(getattr(model, attr), value)
+        ]
+        try:
+            model.update(**msg)
+        finally:
+            del self._changing[root.ref['id']]
+
+    def _update_model(self, events, msg, root, model, doc, comm):
+        child_params = self._parser.children.values()
+        new_children, model_msg, data_msg  = {}, {}, {}
+        for prop, v in list(msg.items()):
+            if prop in child_params:
+                new_children[prop] = prop
+            elif prop in list(Reactive.param)+['events']:
+                model_msg[prop] = v
+            elif prop in self.param and (self.param[prop].precedence or 0) < 0:
+                continue
+            elif isinstance(v, str):
+                data_msg[prop] = bleach.clean(v)
+            else:
+                data_msg[prop] = v
+        if new_children:
+            old_children = {key: events[key].old for key in new_children}
+            if self._parser.looped:
+                model_msg['html'] = escape(self._get_template())
+            children = self._get_children(doc, root, model, comm, old_children)
+        else:
+            children = None
+        self._set_on_model(data_msg, root, model.data)
+        self._set_on_model(model_msg, root, model)
+        if children is not None:
+            self._set_on_model({'children': children}, root, model)
+
+    def on_event(self, node, event, callback):
+        """
+        Registers a callback to be executed when the specified DOM
+        event is triggered on the named node. Note that the named node
+        must be declared in the HTML. To create a named node you must
+        give it an id of the form `id="name"`, where `name` will
+        be the node identifier.
+
+        Arguments
+        ---------
+        node: str
+          Named node in the HTML identifiable via id of the form `id="name"`.
+        event: str
+          Name of the DOM event to add an event listener to.
+        callback: callable
+          A callable which will be given the DOMEvent object.
+        """
+        if node not in self._parser.nodes and node != '*':
+            raise ValueError(f"Named node '{node}' not found. Available "
+                             f"nodes include: {self._parser.nodes}.")
+        self._event_callbacks[node][event].append(callback)
+        events = self._get_events()
+        for ref, (model, _) in self._models.items():
+            print(model)
+            self._apply_update([], {'events': events}, model, ref)

@@ -4,12 +4,17 @@ import asyncio
 from functools import partial
 from threading import Thread
 from queue import Queue as SyncQueue
+from packaging.version import Version
 
 from ..io.notebook import push_on_root
 from ..io.resources import DIST_DIR, LOCAL_DIST
 from ..io.state import state
 from ..models import IDOM as _BkIDOM
 from .base import PaneBase
+
+
+_IDOM_MIN_VER = "0.23"
+_IDOM_MAX_VER = "0.24"
 
 
 def _spawn_threaded_event_loop(coro):
@@ -38,6 +43,11 @@ class IDOM(PaneBase):
     _bokeh_model = _BkIDOM
 
     def __init__(self, object=None, **params):
+        from idom import __version__ as idom_version
+        if Version(_IDOM_MIN_VER) > Version(idom_version) >= Version(_IDOM_MAX_VER):
+            raise RuntimeError(
+                f"Expected idom>={_IDOM_MIN_VER},<{_IDOM_MAX_VER}, but found {idom_version}"
+            )
         super().__init__(object, **params)
         self._idom_loop = None
         self._idom_model = {}
@@ -64,10 +74,15 @@ class IDOM(PaneBase):
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
         from idom.core.layout import LayoutUpdate
+        from idom.config import IDOM_CLIENT_IMPORT_SOURCE_URL
+
+        # let the client determine import source location
+        IDOM_CLIENT_IMPORT_SOURCE_URL.set("./")
+
         if comm:
-            url = '/panel_dist/idom/build/web_modules'
+            url = '/panel_dist/idom'
         else:
-            url = '/'+LOCAL_DIST+'idom/build/web_modules'
+            url = '/'+LOCAL_DIST+'idom'
 
         if self._idom_loop is None:
             self._setup()
@@ -146,10 +161,13 @@ class IDOM(PaneBase):
           The fallback to display while the component is loading
         """
         import idom
-        import idom.client.manage
-        idom.client.manage.APP_DIR = DIST_DIR / 'idom'
-        idom.client.manage.BUILD_DIR = DIST_DIR / 'idom' / 'build'
-        idom.client.manage.WEB_MODULES_DIR = DIST_DIR / 'idom' / 'build' / 'web_modules'
+        from idom.config import IDOM_CLIENT_BUILD_DIR
+        idom_dist_dir = DIST_DIR / "idom"
+        if IDOM_CLIENT_BUILD_DIR.get() != idom_dist_dir:
+            IDOM_CLIENT_BUILD_DIR.set(idom_dist_dir)
+            # just in case packages were already installed but the build hasn't been
+            # copied over to DIST_DIR yet.
+            ignore_installed = True
         return idom.install(packages, ignore_installed, fallback)
 
     @classmethod
