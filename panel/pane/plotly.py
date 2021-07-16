@@ -5,12 +5,12 @@ bokeh model.
 import numpy as np
 import param
 
-from bokeh.models import ColumnDataSource
+from bokeh.models import ColumnDataSource, CustomJS, Tabs
 from pyviz_comms import JupyterComm
 
 from .base import PaneBase
 from ..util import isdatetime, lazy_load
-from ..viewable import Layoutable
+from ..viewable import Layoutable, Viewable
 
 
 
@@ -69,6 +69,7 @@ class Plotly(PaneBase):
     def __init__(self, object=None, **params):
         super().__init__(object, **params)
         self._figure = None
+        self._event = None
         self._update_figure()
 
     def _to_figure(self, obj):
@@ -97,7 +98,7 @@ class Plotly(PaneBase):
     @staticmethod
     def _get_sources_for_trace(json, data, parent_path=''):
         for key, value in list(json.items()):
-            full_path = key if not parent_path else (parent_path + '.' + key)
+            full_path = key if not parent_path else "{}.{}".format(parent_path, key)
             if isinstance(value, np.ndarray):
                 # Extract numpy array
                 data[full_path] = [json.pop(key)]
@@ -116,23 +117,61 @@ class Plotly(PaneBase):
     def _update_figure(self):
         import plotly.graph_objs as go
 
-        if (self.object is None or
-                type(self.object) is not go.Figure or
-                self.object is self._figure):
+        if (self.object is None or type(self.object) is not go.Figure or
+            self.object is self._figure):
             return
 
         # Monkey patch the message stubs used by FigureWidget.
         # We only patch `Figure` objects (not subclasses like FigureWidget) so
         # we don't interfere with subclasses that override these methods.
         fig = self.object
-        fig._send_addTraces_msg = lambda *_, **__: self.param.trigger('object')
-        fig._send_moveTraces_msg = lambda *_, **__: self.param.trigger('object')
-        fig._send_deleteTraces_msg = lambda *_, **__: self.param.trigger('object')
-        fig._send_restyle_msg = lambda *_, **__: self.param.trigger('object')
-        fig._send_relayout_msg = lambda *_, **__: self.param.trigger('object')
-        fig._send_update_msg = lambda *_, **__: self.param.trigger('object')
-        fig._send_animate_msg = lambda *_, **__: self.param.trigger('object')
+        fig._send_addTraces_msg = lambda *_, **__: self._update_from_figure('add')
+        fig._send_moveTraces_msg = lambda *_, **__: self._update_from_figure('move')
+        fig._send_deleteTraces_msg = lambda *_, **__: self._update_from_figure('delete')
+        fig._send_restyle_msg = self._send_restyle_msg
+        fig._send_relayout_msg = self._send_relayout_msg
+        fig._send_update_msg = self._send_update_msg
+        fig._send_animate_msg = lambda *_, **__: self._update_from_figure('animate')
         self._figure = fig
+
+    def _send_relayout_msg(self, relayout_data, source_view_id=None):
+        self._send_update_msg({}, relayout_data, None, source_view_id)
+
+    def _send_restyle_msg(self, restyle_data, trace_indexes=None, source_view_id=None):
+        self._send_update_msg(restyle_data, {}, trace_indexes, source_view_id)
+
+    @param.depends('restyle_data', watch=True)
+    def _update_figure_style(self):
+        if self._figure is None or self.restyle_data is None:
+            return
+        self._figure.plotly_restyle(*self.restyle_data)
+
+    @param.depends('relayout_data', watch=True)
+    def _update_figure_layout(self):
+        if self._figure is None or self.relayout_data is None:
+            return
+        self._figure.plotly_relayout(self.relayout_data)
+
+    def _send_update_msg(
+        self, restyle_data, relayout_data, trace_indexes=None, source_view_id=None
+    ):
+        if source_view_id:
+            return
+        trace_indexes = self._figure._normalize_trace_indexes(trace_indexes)
+        msg = {}
+        if relayout_data:
+            msg['relayout'] = relayout_data
+        if restyle_data:
+            msg['restyle'] = {'data': restyle_data, 'traces': trace_indexes}
+        for ref, (m, _) in self._models.items():
+            self._apply_update([], msg, m, ref)
+
+    def _update_from_figure(self, event, *args, **kwargs):
+        self._event = event
+        try:
+            self.param.trigger('object')
+        finally:
+            self._event = None
 
     def _update_data_sources(self, cds, trace):
         trace_arrays = {}
@@ -177,15 +216,11 @@ class Plotly(PaneBase):
                     data[idx][key] = arr
         return json
 
-    def _get_model(self, doc, root=None, parent=None, comm=None):
-        """
-        Should return the bokeh model to be rendered.
-        """
-        PlotlyPlot = lazy_load('panel.models.plotly', 'PlotlyPlot', isinstance(comm, JupyterComm))
+    def _init_params(self):
         viewport_params = [p for p in self.param if 'viewport' in p]
-        params = list(Layoutable.param)+viewport_params
-        properties = {p : getattr(self, p) for p in params
-                      if getattr(self, p) is not None}
+        parameters = list(Layoutable.param)+viewport_params
+        params = {p: getattr(self, p) for p in parameters
+                  if getattr(self, p) is not None}
 
         if self.object is None:
             json, sources = {}, []
@@ -194,34 +229,24 @@ class Plotly(PaneBase):
             json = self._plotly_json_wrapper(fig)
             sources = Plotly._get_sources(json)
 
-        data = json.get('data', [])
-        layout = json.get('layout', {})
+        params['_render_count'] = self._render_count
+        params['config'] = self.config or {}
+        params['data'] = json.get('data', [])
+        params['data_sources'] = sources
+        params['layout'] = layout = json.get('layout', {})
         if layout.get('autosize') and self.sizing_mode is self.param.sizing_mode.default:
-            properties['sizing_mode'] = 'stretch_both'
+            params['sizing_mode'] = 'stretch_both'
+        return params
 
-        model = PlotlyPlot(
-            data=data, layout=layout, config=self.config or {},
-            data_sources=sources, _render_count=self._render_count,
-            **properties
-        )
-
+    def _get_model(self, doc, root=None, parent=None, comm=None):
+        PlotlyPlot = lazy_load('panel.models.plotly', 'PlotlyPlot', isinstance(comm, JupyterComm))
+        model = PlotlyPlot(**self._init_params())
         if root is None:
             root = model
-
-        self._link_props(
-            model, [
-                'config', 'relayout_data', 'restyle_data', 'click_data',  'hover_data',
-                'clickannotation_data', 'selected_data', 'viewport',
-                'viewport_update_policy', 'viewport_update_throttle', '_render_count'
-            ],
-            doc,
-            root,
-            comm
-        )
-
-        if root is None:
-            root = model
+        self._link_props(model, self._linkable_params, doc, root, comm)
         self._models[root.ref['id']] = (model, parent)
+        if _patch_tabs_plotly not in Viewable._preprocessing_hooks:
+            Viewable._preprocessing_hooks.append(_patch_tabs_plotly)
         return model
 
     def _update(self, ref=None, model=None):
@@ -245,6 +270,7 @@ class Plotly(PaneBase):
                 new_sources.append(cds)
 
             update_sources = self._update_data_sources(cds, trace) or update_sources
+
         try:
             update_layout = model.layout != layout
         except Exception:
@@ -259,28 +285,115 @@ class Plotly(PaneBase):
                 try:
                     update_data = (
                         {k: v for k, v in new.items() if k != 'uid'} !=
-                        {k: v for k, v in old.items() if k != 'uid'})
+                        {k: v for k, v in old.items() if k != 'uid'}
+                    )
                 except Exception:
                     update_data = True
                 if update_data:
                     break
 
+        updates = {}
         if self.sizing_mode is self.param.sizing_mode.default and 'autosize' in layout:
             autosize = layout.get('autosize')
             if autosize and model.sizing_mode != 'stretch_both':
-                model.sizing_mode = 'stretch_both'
+                updates['sizing_mode'] = 'stretch_both'
             elif not autosize and model.sizing_mode != 'fixed':
-                model.sizing_mode = 'fixed'
+                updates['sizing_mode'] = 'fixed'
 
         if new_sources:
-            model.data_sources += new_sources
+            updates['data_sources'] = model.data_sources + new_sources
 
         if update_data:
-            model.data = json.get('data')
+            updates['data'] = json.get('data')
 
         if update_layout:
-            model.layout = layout
+            updates['layout'] = layout
+
+        if updates:
+            model.update(**updates)
 
         # Check if we should trigger rendering
-        if new_sources or update_sources or update_data or update_layout:
+        if updates or update_sources:
             model._render_count += 1
+
+
+def _patch_tabs_plotly(viewable, root):
+    """
+    A preprocessing hook which ensures that any Plotly panes rendered
+    inside Tabs are only visible when the tab they are in is active.
+    This is a workaround for https://github.com/holoviz/panel/issues/804.
+    """
+    from ..models.plotly import PlotlyPlot
+
+    # Clear args on old callback so references aren't picked up
+    old_callbacks = {}
+    for tmodel in root.select({'type': Tabs}):
+        old_callbacks[tmodel] = {
+            k: [cb for cb in cbs] for k, cbs in tmodel.js_property_callbacks.items()
+        }
+        for cb in tmodel.js_property_callbacks.get('change:active', []):
+            if any(tag.startswith('plotly_tab_fix') for tag in cb.tags):
+                # Have to unset owners so property is not notified
+                owners = cb.args._owners
+                cb.args._owners = set()
+                cb.args.clear()
+                cb.args._owners = owners
+
+    tabs_models = list(root.select({'type': Tabs}))
+    plotly_models = list(root.select({'type': PlotlyPlot}))
+
+    tab_callbacks = {}
+    for model in plotly_models:
+        parent_tabs = [tmodel for tmodel in tabs_models if tmodel.select_one({'id': model.id})]
+        active = True
+        args = {'model': model}
+        tag = f'plotly_tab_fix{model.id}'
+
+        # Generate condition that determines whether tab containing
+        # the plot is active
+        condition = ''
+        for tabs in list(parent_tabs):
+            # Find tab that contains plot
+            found = False
+            for i, tab in enumerate(tabs.tabs):
+                if tab.select_one({'id': model.id}):
+                    found = True
+                    break
+            if not found:
+                parent_tabs.remove(tabs)
+                continue
+            if condition:
+                condition += ' && '
+            condition += f"(tabs_{tabs.id}.active == {i})"
+            args.update({f'tabs_{tabs.id}': tabs})
+            active &= tabs.active == i
+
+        model.visible = active
+        code = f'model.visible = {condition};'
+        for tabs in parent_tabs:
+            tab_key = f'tabs_{tabs.id}'
+            cb_args = dict(args)
+            cb_code = code.replace(tab_key, 'cb_obj')
+            cb_args.pop(tab_key)
+            callback = CustomJS(args=cb_args, code=cb_code, tags=[tag])
+            if tabs not in tab_callbacks:
+                tab_callbacks[tabs] = []
+            tab_callbacks[tabs].append(callback)
+
+    for tabs, callbacks in tab_callbacks.items():
+        new_cbs = []
+        for cb in callbacks:
+            found = False
+            for old_cb in tabs.js_property_callbacks.get('change:active', []):
+                if cb.tags[0] in old_cb.tags:
+                    found = True
+                    old_cb.update(code=cb.code)
+                    # Reapply args without notifying property system
+                    owners = old_cb.args._owners
+                    old_cb.args._owners = set()
+                    old_cb.args.update(cb.args)
+                    old_cb.args._owners = owners
+            if not found:
+                new_cbs.append(cb)
+        if new_cbs:
+            tabs.js_on_change('active', *new_cbs)

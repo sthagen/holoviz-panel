@@ -67,10 +67,14 @@ img.app-logo {
   max-width: inherit;
 }
 
+.bk-root .bk.loader.light::after {
+  background-color: var(--neutral-foreground-rest);
+}
+
 .pn-bar {
   width: 20px;
   height: 2px;
-  background-color: white;
+  background-color: var(--neutral-foreground-rest);
   margin: 4px 0;
 }
 
@@ -93,15 +97,11 @@ img.app-logo {
 #sidebar {
   transition: all 0.2s cubic-bezier(0.945, 0.020, 0.270, 0.665);
   transform-origin: center left; /* Set the transformed position of sidebar to center left side. */
-  width: 278px;
   height: calc(100vh - 76px);
   overflow-y: scroll;
-  padding: 10px;
+  padding-left: 5px;
+  padding-right: 10px;
   margin-right: 12px;
-}
-
-#sidebar.active {
-  margin-left: -300px;
 }
 
 #main {
@@ -164,34 +164,14 @@ img.app-logo {
   padding-inline-start: 0px;
 }
 
-.pn-modal {
-  overflow-y: scroll;
-  width: 100%;
-  position: absolute;
-  display: none;
-  top: 0;
-  left: 0;
-}
-
-.pn-modal-content {
-  background-color: #fefefe;
-  margin: auto;
-  margin-top: 25px;
-  margin-bottom: 25px;
-  padding: 15px 20px 20px 20px;
-  border: 1px solid #888;
-  width: 80% !important;
-}
-
 .pn-modal-close {
   position: absolute;
-  right: 25px;
+  right: 10%;
   z-index: 100;
 }
 
 .pn-modal-close:hover,
 .pn-modal-close:focus {
-  color: #000;
   text-decoration: none;
   cursor: pointer;
 }
@@ -213,7 +193,6 @@ html {
   scrollbar-shadow-color: var( --neutral-fill-rest);
 }
 
-::-webkit-scrollbar { width: 12px; height: 3px;}
 ::-webkit-scrollbar-button {  background-color: var( --neutral-fill-rest); }
 ::-webkit-scrollbar-track {  background-color: var( --neutral-fill-rest);}
 ::-webkit-scrollbar-track-piece { background-color: var(--background-color)}
@@ -251,4 +230,8 @@ html {
 
 .fullscreen-button:focus {
   opacity: 1;
+}
+div.pn-wrapper {
+  position: relative;
+  background: var(--background-color)
 }

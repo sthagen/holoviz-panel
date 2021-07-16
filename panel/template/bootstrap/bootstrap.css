@@ -12,20 +12,28 @@ body {
 }
 
 #sidebar {
-  padding: 15px;
+  padding-top: 15px;
+  padding-bottom: 15px;
+  padding-left: 5px;
+  padding-right: 10px;
   transition: all 0.2s cubic-bezier(0.945, 0.020, 0.270, 0.665);
   transform-origin: center left; /* Set the transformed position of sidebar to center left side. */
-  overflow-y: scroll;
+  overflow-y: auto;
+  height: 100%;
 }
 
 #sidebar.active {
-  margin-left: -16.7%;
+  width: 0px;
+  overflow-y: hidden;
+  padding: 0px;
 }
 
 #main {
-  overflow-y: scroll;
+  overflow-y: auto;
+  padding-right: 20px;
   padding-bottom: 20px;
-  padding-right: 30px;
+  padding-top: 10px;
+  padding-left: 10px;
 }
 
 #sidebarCollapse {
@@ -66,6 +74,11 @@ a.navbar-brand {
   padding-left: 10px;
 }
 
+.app-header a.title:hover {
+  text-decoration: none;
+  color: white;
+}
+
 img.app-logo {
   padding-right: 10px;
   font-size: 28px;
@@ -78,33 +91,29 @@ p.bk.card-button {
 }
 
 .pn-modal {
-  overflow-y: scroll;
-  width: 100%;
-  display: none;
-  position: absolute;
-  top: 0;
-  left: 0;
+  overflow-y: auto;
 }
 
 .pn-modal-content {
-  background-color: #fefefe;
-  margin: auto;
-  margin-top: 25px;
-  margin-bottom: 25px;
-  padding: 15px 20px 20px 20px;
-  border: 1px solid #888;
-  width: 80% !important;
+  display: block;
 }
 
 .pn-modal-close {
-  position: absolute;
-  right: 25px;
+  position: relative;
+  float: right;
   z-index: 100;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,.2);
+  padding: 0px;
+  background: transparent;
+  border-top: 0;
+  border-right: 0;
 }
 
 .pn-modal-close:hover,
 .pn-modal-close:focus {
-  color: #000;
   text-decoration: none;
   cursor: pointer;
 }
@@ -116,3 +125,8 @@ p.bk.card-button {
   margin-left: auto;
 }
 
+@media (min-width: 576px) {
+    .modal-dialog {
+	max-width: 80%;
+    }
+}

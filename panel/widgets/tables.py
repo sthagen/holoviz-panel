@@ -7,20 +7,20 @@ import param
 
 from bokeh.models import ColumnDataSource
 from bokeh.models.widgets.tables import (
-    DataTable, DataCube, TableColumn, GroupingInfo, RowAggregator,
-    NumberEditor, NumberFormatter, DateFormatter, CellEditor,
-    DateEditor, StringFormatter, StringEditor, IntEditor,
-    AvgAggregator, MaxAggregator, MinAggregator, SumAggregator,
-    CheckboxEditor
+    AvgAggregator, CellEditor, CellFormatter, CheckboxEditor,
+    DataCube, DataTable, DateEditor, DateFormatter, GroupingInfo,
+    IntEditor, MaxAggregator, MinAggregator, NumberEditor,
+    NumberFormatter, RowAggregator, StringEditor, StringFormatter,
+    SumAggregator, TableColumn
 )
+from pyviz_comms import JupyterComm
 
 from ..depends import param_value_if_widget
-from ..models.tabulator import (
-    DataTabulator as _BkTabulator, TABULATOR_THEMES, THEME_URL
-)
+from ..io.resources import LOCAL_DIST, set_resource_mode
+from ..io.state import state
 from ..reactive import ReactiveData
 from ..viewable import Layoutable
-from ..util import isdatetime, updating
+from ..util import clone_model, isdatetime, lazy_load, updating
 from .base import Widget
 from .button import Button
 from .input import TextInput
@@ -45,6 +45,10 @@ class BaseTable(ReactiveData, Widget):
     show_index = param.Boolean(default=True, doc="""
         Whether to show the index column.""")
 
+    text_align = param.ClassSelector(default={}, class_=(dict, str), doc="""
+        A mapping from column name to alignment or a fixed column
+        alignment, which should be one of 'left', 'center', 'right'.""")
+
     titles = param.Dict(default={}, doc="""
         A mapping from column name to a title to override the name with.""")
 
@@ -67,7 +71,7 @@ class BaseTable(ReactiveData, Widget):
         self._filters = []
         super().__init__(value=value, **params)
 
-    def _validate(self, event):
+    def _validate(self, *events):
         if self.value is None:
             return
         cols = self.value.columns
@@ -129,14 +133,23 @@ class BaseTable(ReactiveData, Widget):
                 formatter = StringFormatter()
                 editor = StringEditor()
 
+            if isinstance(self.text_align, str):
+                formatter.text_align = self.text_align
+            elif col in self.text_align:
+                formatter.text_align = self.text_align[col]
+
             if col in self.editors and not isinstance(self.editors[col], (dict, str)):
                 editor = self.editors[col]
+                if isinstance(editor, CellEditor):
+                    editor = clone_model(editor)
 
             if col in indexes or editor is None:
                 editor = CellEditor()
 
             if col in self.formatters and not isinstance(self.formatters[col], (dict, str)):
                 formatter = self.formatters[col]
+                if isinstance(formatter, CellFormatter):
+                    formatter = clone_model(formatter)
 
             if str(col) != col:
                 self._renamed_cols[str(col)] = col
@@ -160,7 +173,8 @@ class BaseTable(ReactiveData, Widget):
     def _get_model(self, doc, root=None, parent=None, comm=None):
         source = ColumnDataSource(data=self._data)
         source.selected.indices = self.selection
-        model = self._widget_type(**self._get_properties(source))
+        properties = self._get_properties(source)
+        model = self._widget_type(**properties)
         if root is None:
             root = model
         self._link_props(model.source, ['data'], doc, root, comm)
@@ -379,7 +393,12 @@ class BaseTable(ReactiveData, Widget):
         {'x': [1, 2, 3, 4], 'y': ['a', 'b', 'c', 'd']}
         """
         import pandas as pd
-        value_index_start = self.value.index.max() + 1
+
+        if not np.isfinite(self.value.index.max()):
+            value_index_start = 1
+        else:
+            value_index_start = self.value.index.max() + 1
+
         if isinstance(stream_value, pd.DataFrame):
             if reset_index:
                 stream_value = stream_value.reset_index(drop=True)
@@ -593,6 +612,8 @@ class DataFrame(BaseTable):
     _aggregators = {'sum': SumAggregator, 'max': MaxAggregator,
                     'min': MinAggregator, 'mean': AvgAggregator}
 
+    _source_transforms = {'hierarchical': None}
+
     @property
     def _widget_type(self):
         return DataCube if self.hierarchical else DataTable
@@ -712,20 +733,35 @@ class Tabulator(BaseTable):
         The height of each table row.""")
 
     selectable = param.ObjectSelector(
-        default=True, objects=[True, False, 'checkbox'], doc="""
-        Whether a table's rows can be selected or not. Multiple
-        selection is allowed and can be achieved by either clicking
-        multiple checkboxes (if enabled) or using Shift + click on
-        rows.""")
+        default=True, objects=[True, False, 'checkbox', 'checkbox-single', 'toggle'], doc="""
+        Defines the selection mode of the Tabulator.
+
+          - True
+              Selects rows on click. To select multiple use Ctrl-select,
+              to select a range use Shift-select
+          - False
+              Disables selection
+          - 'checkbox'
+              Adds a column of checkboxes to toggle selections
+          - 'checkbox-single'
+              Same as 'checkbox' but header does not alllow select/deselect all
+          - 'toggle'
+              Selection toggles when clicked
+        """)
+
+    selectable_rows = param.Callable(default=None, doc="""
+        A function which given a DataFrame should return a list of
+        rows by integer index, which are selectable.""")
 
     sorters = param.List(default=[], doc="""
         A list of sorters to apply during pagination.""")
 
     theme = param.ObjectSelector(
-        default="simple", objects=TABULATOR_THEMES, doc="""
+        default="simple", objects=[
+            'default', 'site', 'simple', 'midnight', 'modern', 'bootstrap',
+            'bootstrap4', 'materialize', 'bulma', 'semantic-ui', 'fast'
+        ], doc="""
         Tabulator CSS theme to apply to table.""")
-
-    _widget_type = _BkTabulator
 
     _data_params = ['value', 'page', 'page_size', 'pagination', 'sorters']
 
@@ -733,40 +769,54 @@ class Tabulator(BaseTable):
 
     _manual_params = BaseTable._manual_params + _config_params
 
+    _rename = {'disabled': 'editable', 'selection': None, 'selectable': 'select_mode'}
+
     def __init__(self, value=None, **params):
         configuration = params.pop('configuration', {})
         self.style = None
         super().__init__(value=value, **params)
         self._configuration = configuration
 
-    def _validate(self, event):
-        super()._validate(event)
+    def _validate(self, *events):
+        super()._validate(*events)
         if self.value is not None:
             todo = []
             if self.style is not None:
                 todo = self.style._todo
-            self.style = self.value.style
-            self.style._todo = todo
+            try:
+                self.style = self.value.style
+                self.style._todo = todo
+            except Exception:
+                pass
+
+    def _get_theme(self, theme, resources=None):
+        from ..io.resources import RESOURCE_MODE
+        from ..models.tabulator import _get_theme_url, THEME_PATH, THEME_URL
+        if RESOURCE_MODE == 'server' and resources in (None, 'server'):
+            theme_url = f'{LOCAL_DIST}bundled/datatabulator/{THEME_PATH}'
+            if state.rel_path:
+                theme_url = f'{state.rel_path}/{theme_url}'
+        else:
+            theme_url = THEME_URL
+        # Ensure theme_url updates before theme
+        cdn_url = _get_theme_url(THEME_URL, theme)
+        theme_url = _get_theme_url(theme_url, theme)
+        fname = 'tabulator' if self.theme == 'default' else 'tabulator_'+self.theme
+        if self._widget_type is not None:
+            self._widget_type.__css_raw__ = [f'{cdn_url}{fname}.min.css']
+        return theme_url, theme
 
     def _process_param_change(self, msg):
         msg = super()._process_param_change(msg)
         if 'frozen_rows' in msg:
             length = self._length
-            msg['frozen_rows'] = [length+r if r < 0 else r
-                                  for r in msg['frozen_rows']]
+            msg['frozen_rows'] = [
+                length+r if r < 0 else r for r in msg['frozen_rows']
+            ]
         if 'theme' in msg:
-            if 'bootstrap' in self.theme:
-                msg['theme_url'] = THEME_URL + 'bootstrap/'
-            elif 'materialize' in self.theme:
-                msg['theme_url'] = THEME_URL + 'materialize/'
-            elif 'semantic-ui' in self.theme:
-                msg['theme_url'] = THEME_URL + 'semantic-ui/'
-            elif 'bulma' in self.theme:
-                msg['theme_url'] = THEME_URL + 'bulma/'
-            else:
-                msg['theme_url'] = THEME_URL
-            theme = 'tabulator' if self.theme == 'default' else 'tabulator_'+self.theme 
-            _BkTabulator.__css__ = [msg['theme_url'] + theme + '.min.css']
+            msg['theme_url'], msg['theme'] = self._get_theme(msg.pop('theme'))
+        if msg.get('select_mode') == 'checkbox-single':
+            msg['select_mode'] = 'checkbox'
         return msg
 
     def _update_columns(self, event, model):
@@ -805,17 +855,18 @@ class Tabulator(BaseTable):
     def _get_style_data(self):
         if self.value is None:
             return {}
+        df = self._processed
         if self.pagination == 'remote':
             nrows = self.page_size
             start = (self.page-1)*nrows
-            df = self.value.iloc[start: start+nrows]
-        else:
-            df = self.value
-
-        styler = df.style
+            df = df.iloc[start:(start+nrows)]
+        try:
+            styler = df.style
+        except Exception:
+            return {}
         styler._todo = self.style._todo
         styler._compute()
-        offset = len(self.indexes) + int(self.selectable == 'checkbox')
+        offset = len(self.indexes) + int(self.selectable in ('checkbox', 'checkbox-single'))
 
         styles = {}
         for (r, c), s in styler.ctx.items():
@@ -823,6 +874,16 @@ class Tabulator(BaseTable):
                 styles[int(r)] = {}
             styles[int(r)][offset+int(c)] = s
         return styles
+
+    def _get_selectable(self):
+        if self.value is None or self.selectable_rows is None:
+            return None
+        df = self._processed
+        if self.pagination == 'remote':
+            nrows = self.page_size
+            start = (self.page-1)*nrows
+            df = df.iloc[start:(start+nrows)]
+        return self.selectable_rows(df)
 
     def _update_style(self):
         styles = self._get_style_data()
@@ -840,6 +901,7 @@ class Tabulator(BaseTable):
                 return
         super()._stream(stream, rollover)
         self._update_style()
+        self._update_selectable()
 
     def stream(self, stream_value, rollover=None, reset_index=True, follow=True):
         for ref, (model, _) in self._models.items():
@@ -866,6 +928,7 @@ class Tabulator(BaseTable):
         if not patch:
             return
         super()._patch(patch)
+        self._update_selectable()
         if self.pagination == 'remote':
             self._update_style()
 
@@ -877,6 +940,12 @@ class Tabulator(BaseTable):
             self._update_max_page()
             self._update_selected()
         self._update_style()
+        self._update_selectable()
+
+    def _update_selectable(self):
+        selectable = self._get_selectable()
+        for ref, (model, _) in self._models.items():
+            self._apply_update([], {'selectable_rows': selectable}, model, ref)
 
     def _update_max_page(self):
         length = self._length
@@ -887,10 +956,8 @@ class Tabulator(BaseTable):
             self._apply_update([], {'max_page': max_page}, model, ref)
 
     def _update_selected(self, *events, indices=None):
-        if self._updating:
-            return
         kwargs = {}
-        if self.pagination == 'remote':
+        if self.pagination == 'remote' and self.value is not None:
             index = self.value.iloc[self.selection].index
             indices = []
             for v in index.values:
@@ -907,7 +974,8 @@ class Tabulator(BaseTable):
 
     def _update_column(self, column, array):
         if self.pagination != 'remote':
-            self.value[column] = array
+            index = self._processed.index.values
+            self.value.loc[index, column] = array
             return
         nrows = self.page_size
         start = (self.page-1)*nrows
@@ -921,6 +989,7 @@ class Tabulator(BaseTable):
     def _update_selection(self, indices):
         if self.pagination != 'remote':
             self.selection = indices
+            return
         nrows = self.page_size
         start = (self.page-1)*nrows
         index = self._processed.iloc[[start+ind for ind in indices]].index
@@ -941,17 +1010,26 @@ class Tabulator(BaseTable):
             length = self._length
         if props.get('height', None) is None:
             props['height'] = length * self.row_height + 30
-        props['source'] = source
-        props['styles'] = self._get_style_data()
-        props['columns'] = columns = self._get_columns()
-        props['configuration'] = self._get_configuration(columns)
-        props['page'] = self.page
-        props['pagination'] = self.pagination
-        props['page_size'] = self.page_size
-        props['layout'] = self.layout
-        props['groupby'] = self.groupby
-        props['hidden_columns'] = self.hidden_columns
-        props['editable'] = not self.disabled
+        columns = self._get_columns()
+        if self.selectable == 'checkbox-single':
+            selectable = 'checkbox'
+        else:
+            selectable = self.selectable
+        props.update({
+            'source': source,
+            'styles': self._get_style_data(),
+            'columns': columns,
+            'configuration': self._get_configuration(columns),
+            'page': self.page,
+            'pagination': self.pagination,
+            'page_size': self.page_size,
+            'layout': self.layout,
+            'groupby': self.groupby,
+            'hidden_columns': self.hidden_columns,
+            'editable': not self.disabled,
+            'select_mode': selectable,
+            'selectable_rows': self._get_selectable()
+        })
         process = {'theme': self.theme, 'frozen_rows': self.frozen_rows}
         props.update(self._process_param_change(process))
         if self.pagination:
@@ -960,20 +1038,37 @@ class Tabulator(BaseTable):
         return props
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
-        model = super()._get_model(doc, root, parent, comm)
+        if self._widget_type is None:
+            self._widget_type = lazy_load(
+                'panel.models.tabulator', 'DataTabulator', isinstance(comm, JupyterComm)
+            )
+        if comm:
+            with set_resource_mode('inline'):
+                model = super()._get_model(doc, root, parent, comm)
+        else:
+            model = super()._get_model(doc, root, parent, comm)
         if root is None:
             root = model
         self._link_props(model, ['page', 'sorters'], doc, root, comm)
         return model
 
+    def _update_model(self, events, msg, root, model, doc, comm):
+        if comm and 'theme_url' in msg:
+            msg['theme_url'], msg['theme'] = self._get_theme(
+                msg.pop('theme'), 'inline'
+            )
+        super()._update_model(events, msg, root, model, doc, comm)
+
     def _config_columns(self, column_objs):
         column_objs = list(column_objs)
         groups = {}
         columns = []
-        if self.selectable == 'checkbox':
+        selectable = self.selectable
+        if isinstance(selectable, str) and selectable.startswith('checkbox'):
+            title = "" if selectable.endswith('-single') else "rowSelection"
             columns.append({
                 "formatter": "rowSelection",
-                "titleFormatter": "rowSelection",
+                "titleFormatter": title,
                 "hozAlign": "center",
                 "headerSort": False,
                 "frozen": True
@@ -996,6 +1091,11 @@ class Tabulator(BaseTable):
                 if column.field in group_cols
             ]
             col_dict = {'field': column.field}
+
+            if isinstance(self.text_align, str):
+                col_dict['hozAlign'] = self.text_align
+            elif column.field in self.text_align:
+                col_dict['hozAlign'] = self.text_align[column.field]
             formatter = self.formatters.get(column.field)
             if isinstance(formatter, str):
                 col_dict['formatter'] = formatter
@@ -1004,6 +1104,8 @@ class Tabulator(BaseTable):
                 col_dict['formatter'] = formatter.pop('type')
                 col_dict['formatterParams'] = formatter
             editor = self.editors.get(column.field)
+            if column.field in self.editors and editor is None:
+                col_dict['editable'] = False
             if isinstance(editor, str):
                 col_dict['editor'] = editor
             elif isinstance(editor, dict):

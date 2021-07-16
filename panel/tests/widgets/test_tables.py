@@ -5,7 +5,7 @@ import numpy as np
 
 try:
     import pandas as pd
-    from pandas.util.testing import (
+    from pandas._testing import (
         makeCustomDataframe, makeMixedDataFrame, makeTimeDataFrame
     )
 except ImportError:
@@ -85,14 +85,20 @@ def test_dataframe_editors(dataframe, document, comm):
     table = DataFrame(dataframe, editors={'str': editor})
     model = table.get_root(document, comm)
 
-    assert model.columns[-1].editor is editor
+    model_editor = model.columns[-1].editor
+    assert isinstance(model_editor, SelectEditor) is not editor
+    assert isinstance(model_editor, SelectEditor)
+    assert model_editor.options == ['A', 'B', 'C']
 
 
 def test_dataframe_formatter(dataframe, document, comm):
     formatter = NumberFormatter(format='0.0000')
     table = DataFrame(dataframe, formatters={'float': formatter})
     model = table.get_root(document, comm)
-    assert model.columns[2].formatter is formatter
+    model_formatter = model.columns[2].formatter
+    assert model_formatter is not formatter
+    assert isinstance(model_formatter, NumberFormatter)
+    assert model_formatter.format == formatter.format
 
 
 def test_dataframe_triggers(dataframe):
@@ -192,6 +198,8 @@ def test_hierarchical_index(document, comm):
     assert isinstance(agg1, MinAggregator)
     assert agg2.field_ == 'Float'
     assert isinstance(agg2, MinAggregator)
+
+
 
 
 def test_none_table(document, comm):
@@ -304,6 +312,15 @@ def test_tabulator_frozen_rows(document, comm):
     assert model.frozen_rows == [1, 3]
 
 
+def test_tabulator_selectable_rows(document, comm):
+    df = makeMixedDataFrame()
+    table = Tabulator(df, selectable_rows=lambda df: list(df[df.A>2].index.values))
+
+    model = table.get_root(document, comm)
+
+    assert model.selectable_rows == [3, 4]
+
+
 def test_tabulator_pagination(document, comm):
     df = makeMixedDataFrame()
     table = Tabulator(df, pagination='remote', page_size=2)
@@ -374,6 +391,23 @@ def test_tabulator_pagination_selection(document, comm):
     assert model.source.selected.indices == [0, 1]
 
 
+def test_tabulator_pagination_selectable_rows(document, comm):
+    df = makeMixedDataFrame()
+    table = Tabulator(
+        df, pagination='remote', page_size=3,
+        selectable_rows=lambda df: list(df.index.values[::2])
+    )
+
+    model = table.get_root(document, comm)
+
+    print(table._processed)
+    assert model.selectable_rows == [0, 2]
+
+    table.page = 2
+
+    assert model.selectable_rows == [3]
+    
+
 def test_tabulator_styling(document, comm):
     df = makeMixedDataFrame()
     table = Tabulator(df)
@@ -386,12 +420,25 @@ def test_tabulator_styling(document, comm):
     model = table.get_root(document, comm)
 
     assert model.styles == {
-        0: {1: ['color: black']},
-        1: {1: ['color: black']},
-        2: {1: ['color: black']},
-        3: {1: ['color: red']},
-        4: {1: ['color: red']}
+        0: {1: [('color', 'black')]},
+        1: {1: [('color', 'black')]},
+        2: {1: [('color', 'black')]},
+        3: {1: [('color', 'red')]},
+        4: {1: [('color', 'red')]}
     }
+
+def test_tabulator_empty_table(document, comm):
+    value_df = makeMixedDataFrame()
+    empty_df = pd.DataFrame([], columns=value_df.columns)
+    table = Tabulator(empty_df)
+
+    table.get_root(document, comm)
+
+    assert table.value.shape == empty_df.shape
+
+    table.stream(value_df, follow=True)
+
+    assert table.value.shape == value_df.shape
 
 def test_tabulator_stream_series(document, comm):
     df = makeMixedDataFrame()
@@ -504,7 +551,7 @@ def test_tabulator_stream_dict_rollover(document, comm):
     for col, values in model.source.data.items():
         np.testing.assert_array_equal(values, expected[col])
 
-        
+
 def test_tabulator_patch_scalars(document, comm):
     df = makeMixedDataFrame()
     table = Tabulator(df)
@@ -839,6 +886,28 @@ def test_tabulator_stream_dataframe_with_filter(document, comm):
     }
     for col, values in model.source.data.items():
         np.testing.assert_array_equal(values, expected[col])
+
+
+def test_tabulator_stream_dataframe_selectable_rows(document, comm):
+    df = makeMixedDataFrame()
+    table = Tabulator(df, selectable_rows=lambda df: list(range(0, len(df), 2)))
+
+    model = table.get_root(document, comm)
+
+    assert model.selectable_rows == [0, 2, 4]
+
+    stream_value = pd.DataFrame({
+        'A': [5, 6],
+        'B': [1, 0],
+        'C': ['foo6', 'foo7'],
+        'D': [dt.datetime(2009, 1, 8), dt.datetime(2009, 1, 9)]
+    })
+
+    table.stream(stream_value)
+
+    print(len(table._processed))
+
+    assert model.selectable_rows == [0, 2, 4, 6]
 
 
 def test_tabulator_dataframe_replace_data(document, comm):

@@ -52,6 +52,8 @@ class Bokeh(PaneBase):
 
     priority = 0.8
 
+    _rename = {'theme': None}
+
     @classmethod
     def applies(cls, obj):
         return isinstance(obj, LayoutDOM)
@@ -216,7 +218,7 @@ class Matplotlib(PNG, IPyWidget):
         w, h = self.object.get_size_inches()
         return int(w*72), int(h*72)
 
-    def _img(self):
+    def _data(self):
         self.object.set_dpi(self.dpi)
         b = BytesIO()
 

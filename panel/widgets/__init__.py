@@ -13,7 +13,8 @@ from .indicators import ( # noqa
     LoadingSpinner,
     Number,
     Progress,
-    Trend
+    Trend,
+    Tqdm,
 )
 from .input import (  # noqa
     ColorPicker,
@@ -34,7 +35,7 @@ from .input import (  # noqa
     PasswordInput,
     TextAreaInput,
 )
-from .misc import Audio, FileDownload, VideoStream # noqa
+from .misc import FileDownload, VideoStream # noqa
 from .player import DiscretePlayer, Player # noqa
 from .slider import ( # noqa
     DateSlider, DateRangeSlider, DiscreteSlider, EditableRangeSlider,
@@ -48,4 +49,5 @@ from .select import ( # noqa
 )
 from .speech_to_text import SpeechToText, Grammar, GrammarList # noqa
 from .tables import DataFrame, Tabulator  # noqa
+from .terminal import Terminal # noqa
 from .text_to_speech import TextToSpeech, Utterance, Voice # noqa

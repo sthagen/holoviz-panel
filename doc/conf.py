@@ -36,7 +36,7 @@ html_theme_options = {
         },
         {
             "name": "Discourse",
-            "url": "https://https://discourse.holoviz.org/",
+            "url": "https://discourse.holoviz.org/",
             "icon": "fab fa-discourse",
         },
     ]
@@ -75,6 +75,9 @@ nbsite_gallery_conf = {
                 {'path': 'streaming',
                  'title': 'Streaming',
                  'description': ('Streaming data to a visual component.')},
+                {'path': 'components',
+                 'title': 'Custom components',
+                 'description': "Components created using Panel's ReactiveHTML class."},
                 {'path': 'links',
                  'title': 'Linking',
                  'description': ('Using Javascript based links to define interactivity without '

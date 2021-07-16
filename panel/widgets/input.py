@@ -19,6 +19,7 @@ from bokeh.models.widgets import (
     FileInput as _BkFileInput, TextAreaInput as _BkTextAreaInput,
     NumericInput as _BkNumericInput)
 
+from ..config import config
 from ..layout import Column
 from ..util import param_reprs, as_unicode
 from .base import Widget, CompositeWidget
@@ -369,6 +370,14 @@ class _SpinnerBase(_NumericInputBase):
 
         return super()._update_model(events, msg, root, model, doc, comm)
 
+    def _process_property_change(self, msg):
+        if config.throttled:
+            if "value" in msg:
+                del msg["value"]
+            if "value_throttled" in msg:
+                msg["value"] = msg["value_throttled"]
+        return super()._process_property_change(msg)
+
 
 class IntInput(_SpinnerBase, _IntInputBase):
 
@@ -585,6 +594,7 @@ class DatetimeRangeInput(CompositeWidget):
         self._msg = ''
         self._composite.extend([self._text, self._start, self._end])
         self._updating = False
+        self.param.watch(self._update_widgets, [p for p in self.param if p != 'name'])
         self._update_widgets()
         self._update_label()
 
@@ -611,14 +621,19 @@ class DatetimeRangeInput(CompositeWidget):
         finally:
             self._updating = False
 
-    @param.depends('value', 'start', 'end', 'name', 'format', watch=True)
-    def _update_widgets(self):
+    def _update_widgets(self, *events):
+        filters = [event.name for event in events] if events else list(self.param)
+        if 'name' in filters:
+            filters.remove('name')
         if self._updating:
             return
         try:
             self._updating = True
-            self._start.param.set_param(value=self.value[0], start=self.start, end=self.end, format=self.format)
-            self._end.param.set_param(value=self.value[1], start=self.start, end=self.end, format=self.format)
+            params = {k: v for k, v in self.param.get_param_values() if k in filters}
+            start_params = dict(params, value=self.value[0])
+            end_params = dict(params, value=self.value[1])
+            self._start.param.set_param(**start_params)
+            self._end.param.set_param(**end_params)
         finally:
             self._updating = False
 

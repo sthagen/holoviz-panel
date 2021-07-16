@@ -34,9 +34,10 @@ from bokeh.embed.elements import html_page_for_render_items, script_for_render_i
 from bokeh.embed.util import RenderItem
 from bokeh.io import curdoc
 from bokeh.server.server import Server
-from bokeh.server.urls import per_app_patterns
+from bokeh.server.urls import per_app_patterns, toplevel_patterns
 from bokeh.server.views.autoload_js_handler import AutoloadJsHandler as BkAutoloadJsHandler
 from bokeh.server.views.doc_handler import DocHandler as BkDocHandler
+from bokeh.server.views.root_handler import RootHandler as BkRootHandler
 
 # Tornado imports
 from tornado.ioloop import IOLoop
@@ -167,6 +168,12 @@ class Application(BkApplication):
             cb(session_context)
         await super().on_session_created(session_context)
 
+    def initialize_document(self, doc):
+        super().initialize_document(doc)
+        if doc in state._templates:
+            template = state._templates[doc]
+            template.server_doc(title=template.title, location=True, doc=doc)
+
 bokeh.command.util.Application = Application
 
 
@@ -197,12 +204,16 @@ class DocHandler(BkDocHandler, SessionPrefixHandler):
     async def get(self, *args, **kwargs):
         with self._session_prefix():
             session = await self.get_session()
-            resources = Resources.from_bokeh(self.application.resources())
-            page = server_html_page_for_session(
-                session, resources=resources, title=session.document.title,
-                template=session.document.template,
-                template_variables=session.document.template_variables
-            )
+            state.curdoc = session.document
+            try:
+                resources = Resources.from_bokeh(self.application.resources())
+                page = server_html_page_for_session(
+                    session, resources=resources, title=session.document.title,
+                    template=session.document.template,
+                    template_variables=session.document.template_variables
+                )
+            finally:
+                state.curdoc = None
         self.set_header("Content-Type", 'text/html')
         self.write(page)
 
@@ -230,13 +241,30 @@ class AutoloadJsHandler(BkAutoloadJsHandler, SessionPrefixHandler):
 
         with self._session_prefix():
             session = await self.get_session()
-            resources = Resources.from_bokeh(self.application.resources(server_url))
-            js = autoload_js_script(resources, session.token, element_id, app_path, absolute_url)
+            state.curdoc = session.document
+            try:
+                resources = Resources.from_bokeh(self.application.resources(server_url))
+                js = autoload_js_script(resources, session.token, element_id, app_path, absolute_url)
+            finally:
+                state.curdoc = None
 
         self.set_header("Content-Type", 'application/javascript')
         self.write(js)
 
 per_app_patterns[3] = (r'/autoload.js', AutoloadJsHandler)
+
+class RootHandler(BkRootHandler):
+
+    @authenticated
+    async def get(self, *args, **kwargs):
+        if self.index and not self.index.endswith('.html'):
+            prefix = "" if self.prefix is None else self.prefix
+            redirect_to = prefix + '.'.join(self.index.split('.')[:-1])
+            self.redirect(redirect_to)
+        await super().get(*args, **kwargs)
+
+toplevel_patterns[0] = (r'/?', RootHandler)
+bokeh.server.tornado.RootHandler = RootHandler
 
 def modify_document(self, doc):
     from bokeh.io.doc import set_curdoc as bk_set_curdoc

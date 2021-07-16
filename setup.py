@@ -134,14 +134,14 @@ _tests = [
 extras_require = {
     'examples': [
         'hvplot',
-        'plotly',
+        'plotly >=4.0',
         'altair',
         'streamz',
         'vega_datasets',
-        'vtk',
+        'vtk ==9.0.1',
         'scikit-learn',
         'datashader',
-        'jupyter_bokeh',
+        'jupyter_bokeh>=3.0.2',
         'django',
         'channels',
         'pyvista',
@@ -149,7 +149,7 @@ extras_require = {
         'ipywidgets_bokeh',
         'ipyvolume',
         'ipyleaflet',
-        'xarray <0.17'
+        'xarray <0.17',
     ],
     'tests': _tests,
     'recommended': _recommended,
@@ -173,7 +173,8 @@ extras_require['build'] = [
     'setuptools >=30.3.0',
     'bokeh >=2.0.0',
     'pyviz_comms >=0.6.0',
-    'bleach'
+    'bleach',
+    'tqdm'
 ]
 
 setup_args = dict(

@@ -60,6 +60,10 @@ class Tabs(NamedListPanel):
         if root.ref['id'] in self._panels:
             del self._panels[root.ref['id']]
 
+    @property
+    def _preprocess_params(self):
+        return NamedListPanel._preprocess_params + (['active'] if self.dynamic else [])
+
     #----------------------------------------------------------------
     # Callback API
     #----------------------------------------------------------------
@@ -78,7 +82,7 @@ class Tabs(NamedListPanel):
             new = [old[i] for i in inds]
         return old, new
 
-    def _comm_change(self, doc, ref, comm, attr, old, new):
+    def _comm_change(self, doc, ref, comm, subpath, attr, old, new):
         if attr in self._changing.get(ref, []):
             self._changing[ref].remove(attr)
             return
@@ -86,9 +90,9 @@ class Tabs(NamedListPanel):
             old, new = self._process_close(ref, attr, old, new)
             if new is None:
                 return
-        super()._comm_change(doc, ref, comm, attr, old, new)
+        super()._comm_change(doc, ref, comm, subpath, attr, old, new)
 
-    def _server_change(self, doc, ref, attr, old, new):
+    def _server_change(self, doc, ref, subpath, attr, old, new):
         if attr in self._changing.get(ref, []):
             self._changing[ref].remove(attr)
             return
@@ -96,7 +100,7 @@ class Tabs(NamedListPanel):
             old, new = self._process_close(ref, attr, old, new)
             if new is None:
                 return
-        super()._server_change(doc, ref, attr, old, new)
+        super()._server_change(doc, ref, subpath, attr, old, new)
 
     def _update_active(self, *events):
         for event in events:

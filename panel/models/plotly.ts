@@ -4,6 +4,7 @@ import {div} from "@bokehjs/core/dom"
 import {clone} from "@bokehjs/core/util/object"
 import {isEqual} from "@bokehjs/core/util/eq"
 import {HTMLBox} from "@bokehjs/models/layouts/html_box"
+import {ColumnDataSource} from "@bokehjs/models/sources/column_data_source";
 
 import {debounce} from  "debounce"
 import {deepCopy, isPlainObject, get, throttle} from "./util"
@@ -117,22 +118,42 @@ export class PlotlyPlotView extends PanelHTMLBoxView {
   _reacting: boolean = false
   _relayouting: boolean = false
   _layout_wrapper: PlotlyHTMLElement
-  _gd: any
-
+  _watched_sources: string[]
   _end_relayouting = debounce(() => {
     this._relayouting = false
-    }, 2000, false)
+  }, 2000, false)
 
   connect_signals(): void {
     super.connect_signals();
+    const {data, data_sources, layout, relayout, restyle} = this.model.properties
+    this.on_change([data, data_sources, layout], () => {
+      const render_count = this.model._render_count
+      setTimeout(() => {
+	if (this.model._render_count === render_count)
+	  this.model._render_count += 1;
+      }, 250)
+    });
+    this.on_change([relayout], () => {
+      if (this.model.relayout == null)
+	return
+      (window as any).Plotly.relayout(this._layout_wrapper, this.model.relayout)
+      this.model.relayout = null
+    })
+    this.on_change([restyle], () => {
+      if (this.model.restyle == null)
+	return
+      (window as any).Plotly.restyle(this._layout_wrapper, this.model.restyle.data, this.model.restyle.traces)
+      this.model.restyle = null
+    })
 
-    this.connect(this.model.properties.viewport_update_policy.change,
-        this._updateSetViewportFunction);
-    this.connect(this.model.properties.viewport_update_throttle.change,
-        this._updateSetViewportFunction);
-
-    this.connect(this.model.properties._render_count.change, this.plot);
-    this.connect(this.model.properties.viewport.change, this._updateViewportFromProperty);
+    this.connect(this.model.properties.viewport_update_policy.change, () => {
+      this._updateSetViewportFunction()
+    });
+    this.connect(this.model.properties.viewport_update_throttle.change, () => {
+      this._updateSetViewportFunction()
+    });
+    this.connect(this.model.properties._render_count.change, () => this.plot());
+    this.connect(this.model.properties.viewport.change, () => this._updateViewportFromProperty());
   }
 
   render(): void {
@@ -143,15 +164,16 @@ export class PlotlyPlotView extends PanelHTMLBoxView {
     this.plot()
   }
 
-  plot(): void {
-    if (!(window as any).Plotly) { return }
+  _trace_data(): any {
     const data = [];
     for (let i = 0; i < this.model.data.length; i++) {
       data.push(this._get_trace(i, false));
     }
+    return data
+  }
 
-    let newLayout = deepCopy(this.model.layout);
-
+  _layout_data(): void {
+    const newLayout = deepCopy(this.model.layout);
     if (this._relayouting) {
       const {layout} = this._layout_wrapper;
 
@@ -163,78 +185,84 @@ export class PlotlyPlotView extends PanelHTMLBoxView {
         }
       }, {});
     }
+    return newLayout
+  }
 
+  _install_callbacks(): void {
+    //  - plotly_relayout
+    this._layout_wrapper.on('plotly_relayout', (eventData: any) => {
+      if (eventData['_update_from_property'] !== true) {
+        this.model.relayout_data = filterEventData(
+          this._layout_wrapper, eventData, 'relayout');
+
+        this._updateViewportProperty();
+
+        this._end_relayouting();
+      }
+    });
+
+    //  - plotly_relayouting
+    this._layout_wrapper.on('plotly_relayouting', () => {
+      if (this.model.viewport_update_policy !== 'mouseup') {
+        this._relayouting = true;
+        this._updateViewportProperty();
+      }
+    });
+
+    //  - plotly_restyle
+    this._layout_wrapper.on('plotly_restyle', (eventData: any) => {
+      this.model.restyle_data = filterEventData(
+        this._layout_wrapper, eventData, 'restyle');
+
+      this._updateViewportProperty();
+    });
+
+    //  - plotly_click
+    this._layout_wrapper.on('plotly_click', (eventData: any) => {
+      this.model.click_data = filterEventData(
+        this._layout_wrapper, eventData, 'click');
+    });
+
+    //  - plotly_hover
+    this._layout_wrapper.on('plotly_hover', (eventData: any) => {
+      this.model.hover_data = filterEventData(
+        this._layout_wrapper, eventData, 'hover');
+    });
+
+    //  - plotly_selected
+    this._layout_wrapper.on('plotly_selected', (eventData: any) => {
+      this.model.selected_data = filterEventData(
+        this._layout_wrapper, eventData, 'selected');
+    });
+
+    //  - plotly_clickannotation
+    this._layout_wrapper.on('plotly_clickannotation', (eventData: any) => {
+      delete eventData["event"];
+      delete eventData["fullAnnotation"];
+      this.model.clickannotation_data = eventData
+    });
+
+    //  - plotly_deselect
+    this._layout_wrapper.on('plotly_deselect', () => {
+      this.model.selected_data = null;
+    });
+
+    //  - plotly_unhover
+    this._layout_wrapper.on('plotly_unhover', () => {
+      this.model.hover_data = null;
+    });
+  }
+
+  plot(): void {
+    if (!(window as any).Plotly) { return }
+    const data = this._trace_data()
+    const newLayout = this._layout_data()
     this._reacting = true;
     (window as any).Plotly.react(this._layout_wrapper, data, newLayout, this.model.config).then(() => {
         this._updateSetViewportFunction();
         this._updateViewportProperty();
-
-        if (!this._plotInitialized) {
-          // Install callbacks
-
-          //  - plotly_relayout
-          this._layout_wrapper.on('plotly_relayout', (eventData: any) => {
-            if (eventData['_update_from_property'] !== true) {
-              this.model.relayout_data = filterEventData(
-                  this._layout_wrapper, eventData, 'relayout');
-
-              this._updateViewportProperty();
-
-              this._end_relayouting();
-            }
-          });
-
-          //  - plotly_relayouting
-          this._layout_wrapper.on('plotly_relayouting', () => {
-            if (this.model.viewport_update_policy !== 'mouseup') {
-              this._relayouting = true;
-              this._updateViewportProperty();
-            }
-          });
-
-          //  - plotly_restyle
-          this._layout_wrapper.on('plotly_restyle', (eventData: any) => {
-            this.model.restyle_data = filterEventData(
-                this._layout_wrapper, eventData, 'restyle');
-
-            this._updateViewportProperty();
-          });
-
-          //  - plotly_click
-          this._layout_wrapper.on('plotly_click', (eventData: any) => {
-            this.model.click_data = filterEventData(
-                this._layout_wrapper, eventData, 'click');
-          });
-
-          //  - plotly_hover
-          this._layout_wrapper.on('plotly_hover', (eventData: any) => {
-            this.model.hover_data = filterEventData(
-                this._layout_wrapper, eventData, 'hover');
-          });
-
-          //  - plotly_selected
-          this._layout_wrapper.on('plotly_selected', (eventData: any) => {
-            this.model.selected_data = filterEventData(
-                this._layout_wrapper, eventData, 'selected');
-          });
-
-          //  - plotly_clickannotation
-          this._layout_wrapper.on('plotly_clickannotation', (eventData: any) => {
-            delete eventData["event"];
-            delete eventData["fullAnnotation"];
-            this.model.clickannotation_data = eventData
-          });
-
-          //  - plotly_deselect
-          this._layout_wrapper.on('plotly_deselect', () => {
-            this.model.selected_data = null;
-          });
-
-          //  - plotly_unhover
-          this._layout_wrapper.on('plotly_unhover', () => {
-            this.model.hover_data = null;
-          });
-        }
+        if (!this._plotInitialized)
+          this._install_callbacks()
         this._plotInitialized = true;
         this._reacting = false;
         if(!_isHidden(this._layout_wrapper))
@@ -339,6 +367,8 @@ export namespace PlotlyPlot {
     layout: p.Property<any>
     config: p.Property<any>
     data_sources: p.Property<any[]>
+    relayout: p.Property<any>
+    restyle: p.Property<any>
     relayout_data: p.Property<any>
     restyle_data: p.Property<any>
     click_data: p.Property<any>
@@ -366,21 +396,23 @@ export class PlotlyPlot extends HTMLBox {
   static init_PlotlyPlot(): void {
     this.prototype.default_view = PlotlyPlotView
 
-    this.define<PlotlyPlot.Props>({
-      data: [ p.Array, [] ],
-      layout: [ p.Any, {} ],
-      config: [ p.Any, {} ],
-      data_sources: [ p.Array, [] ],
-      relayout_data: [ p.Any, {} ],
-      restyle_data: [ p.Array, [] ],
-      click_data: [ p.Any, {} ],
-      hover_data: [ p.Any, {} ],
-      clickannotation_data: [ p.Any, {} ],
-      selected_data: [ p.Any, {} ],
-      viewport: [ p.Any, {} ],
-      viewport_update_policy: [ p.String, "mouseup" ],
-      viewport_update_throttle: [ p.Number, 200 ],
-      _render_count: [ p.Number, 0 ],
-    })
+    this.define<PlotlyPlot.Props>(({Array, Any, Ref, String, Nullable, Number}) => ({
+      data: [ Array(Any), [] ],
+      layout: [ Any, {} ],
+      config: [ Any, {} ],
+      data_sources: [ Array(Ref(ColumnDataSource)), [] ],
+      relayout: [ Nullable(Any), {} ],
+      restyle: [ Nullable(Any), {} ],
+      relayout_data: [ Any, {} ],
+      restyle_data: [ Array(Any), [] ],
+      click_data: [ Any, {} ],
+      hover_data: [ Any, {} ],
+      clickannotation_data: [ Any, {} ],
+      selected_data: [ Any, {} ],
+      viewport: [ Any, {} ],
+      viewport_update_policy: [ String, "mouseup" ],
+      viewport_update_throttle: [ Number, 200 ],
+      _render_count: [ Number, 0 ],
+    }))
   }
 }

@@ -1,6 +1,6 @@
 asgiref==3.2.3
 attrs==19.3.0
-autobahn==19.11.1
+autobahn==20.12.3
 Automat==0.8.0
 bokeh==1.4.0
 cffi==1.13.2
@@ -9,7 +9,7 @@ colorcet==2.0.2
 constantly==15.1.0
 cryptography==3.3.2
 daphne==2.4.1
-Django==3.1.8
+Django==3.1.12
 holoviews==1.13.2
 hvplot==0.5.2
 hyperlink==19.0.0
@@ -23,7 +23,7 @@ packaging==20.0
 pandas==0.25.3
 panel==0.9.3
 param==1.9.2
-Pillow==8.1.1
+Pillow==8.2.0
 pyasn1==0.4.8
 pyasn1-modules==0.2.7
 pycparser==2.19

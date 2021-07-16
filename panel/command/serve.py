@@ -145,6 +145,13 @@ class Serve(_BkServe):
             else:
                 files.append(f)
 
+        if args.index and not args.index.endswith('.html') and not any(f.endswith(args.index) for f in files):
+            raise ValueError("The --index argument must either specify a jinja2 "
+                             "template with a .html file extension or select one "
+                             "of the applications being served as the default. "
+                             f"The specified application {args.index!r} could "
+                             "not be found.")
+
         # Handle tranquilized functions in the supplied functions
         if args.rest_provider in REST_PROVIDERS:
             pattern = REST_PROVIDERS[args.rest_provider](files, args.rest_endpoint)

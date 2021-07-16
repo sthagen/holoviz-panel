@@ -8,14 +8,31 @@ import param
 from bokeh.themes import Theme as _BkTheme
 
 from ...layout import Card
-from ..base import BasicTemplate
+from ..base import BasicTemplate, TemplateActions
 from ..theme import DefaultTheme, DarkTheme
+
+
+
+class MaterialTemplateActions(TemplateActions):
+
+    _scripts = {
+        'open_modal': ["""
+        modal.open();
+        setTimeout(function() {{ window.dispatchEvent(new Event('resize')); }}, 200);
+        """],
+        'close_modal': ["modal.close()"]
+    }
+
 
 
 class MaterialTemplate(BasicTemplate):
     """
     MaterialTemplate is built on top of Material web components.
     """
+    sidebar_width = param.Integer(370, doc="""
+        The width of the sidebar in pixels. Default is 370.""")
+
+    _actions = param.ClassSelector(default=MaterialTemplateActions(), class_=TemplateActions)
 
     _css = pathlib.Path(__file__).parent / 'material.css'
 
@@ -26,7 +43,6 @@ class MaterialTemplate(BasicTemplate):
             'children': {'margin': (5, 10)},
             'title_css_classes': ['mdc-card-title'],
             'css_classes': ['mdc-card'],
-            'header_css_classes': ['mdc-card__primary-action'],
             'button_css_classes': ['mdc-button', 'mdc-card-button'],
             'margin': (10, 5)
         },
@@ -40,6 +56,7 @@ class MaterialTemplate(BasicTemplate):
             'material': "https://unpkg.com/material-components-web@7.0.0/dist/material-components-web.min.js"
         }
     }
+
 
 
 MATERIAL_FONT = "Roboto, sans-serif, Verdana"
@@ -154,7 +171,7 @@ class MaterialDarkTheme(DarkTheme):
     """
 
     css = param.Filename(default=pathlib.Path(__file__).parent / 'dark.css')
-    
+
     bokeh_theme = param.ClassSelector(class_=(_BkTheme, str),
                                       default=_BkTheme(json=MATERIAL_DARK_THEME))
 

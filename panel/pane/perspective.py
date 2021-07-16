@@ -310,9 +310,12 @@ class Perspective(PaneBase, ReactiveData):
         else:
             df, kwargs = deconstruct_pandas(self.object)
             ncols = len(df.columns)
-            data = ColumnDataSource.from_df(df)
+            data = {col: df[col].values for col in df.columns}
             if kwargs:
-                self.param.set_param(**kwargs)
+                self.param.set_param(**{
+                    k: v for k, v in kwargs.items()
+                    if getattr(self, k) is None
+                })
         cols = set(self._as_digit(c) for c in df)
         if len(cols) != ncols:
             raise ValueError("Integer columns must be unique when "
@@ -329,7 +332,7 @@ class Perspective(PaneBase, ReactiveData):
         props['schema'] = schema = {}
         for col, array in self._data.items():
             if not isinstance(array, np.ndarray):
-                continue
+                array = np.asarray(array)
             kind = array.dtype.kind.lower()
             if kind == 'm':
                 schema[col] = 'datetime'
@@ -355,9 +358,9 @@ class Perspective(PaneBase, ReactiveData):
                     elif isinstance(value, (int, np.int)):
                         schema[col] = 'float'
                     else:
-                        schema[col] = 'str'
+                        schema[col] = 'string'
                 else:
-                    schema[col] = 'str'
+                    schema[col] = 'string'
         return props
 
     def _process_param_change(self, msg):
@@ -366,9 +369,9 @@ class Perspective(PaneBase, ReactiveData):
             if msg.get(p):
                 msg[p] = [str(col) for col in msg[p]]
         if msg.get('sort'):
-            msg['sort'] = [[str(col), d] for col, d in msg['sort']]
+            msg['sort'] = [[str(col), *args] for col, *args in msg['sort']]
         if msg.get('filters'):
-            msg['filters'] = [[str(col), e, val] for col, e, val in msg['filters']]
+            msg['filters'] = [[str(col), *args] for col, *args in msg['filters']]
         if msg.get('aggregates'):
             msg['aggregates'] = {str(col): agg for col, agg in msg['aggregates'].items()}
         return msg
@@ -388,9 +391,9 @@ class Perspective(PaneBase, ReactiveData):
             if msg.get(prop):
                 msg[prop] = [self._as_digit(col) for col in msg[prop]]
         if msg.get('sort'):
-            msg['sort'] = [[self._as_digit(col), d] for col, d in msg['sort']]
+            msg['sort'] = [[self._as_digit(col), *args] for col, *args in msg['sort']]
         if msg.get('filters'):
-            msg['filters'] = [[self._as_digit(col), e, val] for col, e, val in msg['filters']]
+            msg['filters'] = [[self._as_digit(col), *args] for col, *args in msg['filters']]
         if msg.get('aggregates'):
             msg['aggregates'] = {self._as_digit(col): agg for col, agg in msg['aggregates'].items()}
         return msg

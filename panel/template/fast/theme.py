@@ -11,7 +11,7 @@ from ..theme import DarkTheme, DefaultTheme
 _ROOT = pathlib.Path(__file__).parent / "css"
 
 COLLAPSED_SVG_ICON = """
-<svg style="stroke: #E62F63" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" slot="collapsed-icon">
+<svg style="stroke: var(--accent-fill-rest);" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" slot="collapsed-icon">
   <path d="M15.2222 1H2.77778C1.79594 1 1 1.79594 1 2.77778V15.2222C1 16.2041 1.79594 17 2.77778 17H15.2222C16.2041 17 17 16.2041 17 15.2222V2.77778C17 1.79594 16.2041 1 15.2222 1Z" stroke-linecap="round" stroke-linejoin="round"></path>
   <path d="M9 5.44446V12.5556" stroke-linecap="round" stroke-linejoin="round"></path>
   <path d="M5.44446 9H12.5556" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -19,7 +19,7 @@ COLLAPSED_SVG_ICON = """
 """ # noqa
 
 EXPANDED_SVG_ICON = """
-<svg style="stroke: #E62F63" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" slot="expanded-icon">
+<svg style="stroke: var(--accent-fill-rest);" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" slot="expanded-icon">
   <path d="M15.2222 1H2.77778C1.79594 1 1 1.79594 1 2.77778V15.2222C1 16.2041 1.79594 17 2.77778 17H15.2222C16.2041 17 17 16.2041 17 15.2222V2.77778C17 1.79594 16.2041 1 15.2222 1Z" stroke-linecap="round" stroke-linejoin="round"></path>
   <path d="M5.44446 9H12.5556" stroke-linecap="round" stroke-linejoin="round"></path>
 </svg>
@@ -33,31 +33,24 @@ class FastStyle(param.Parameterized):
     to style the Fast Templates.
     """
 
-    accent_fill_active = param.Color(default="#E45A8C")
-    accent_fill_hover = param.Color(default="#DF3874")
-    accent_fill_rest = param.Color(default="#A01346")
-    accent_foreground_active = param.Color(default="#BA1651")
-    accent_foreground_cut = param.Color(default="#000000")
-    accent_foreground_hover = param.Color(default="#7A0F35")
-    accent_foreground_rest = param.Color(default="#A01346")
-
-    neutral_outline_active = param.Color(default="#D6D6D6")
-    neutral_outline_hover = param.Color(default="#979797")
-    neutral_outline_rest = param.Color(default="#BEBEBE")
-
-    accent_base_color = param.Color(default="#A01346")
-    background_color = param.Color(default="#ffffff")
+    background_color = param.String(default="#ffffff")
+    neutral_color = param.String(default="#000000")
+    accent_base_color = param.String(default="#A01346")
     collapsed_icon = param.String(default=COLLAPSED_SVG_ICON)
     expanded_icon = param.String(default=EXPANDED_SVG_ICON)
-    color = param.Color(default="#00aa41")
-    neutral_fill_card_rest = param.Color(default="#F7F7F7")
-    neutral_focus = param.Color(default="#888888")
-    neutral_foreground_rest = param.Color(default="#2B2B2B")
+    color = param.String(default="#00aa41")
+    neutral_fill_card_rest = param.String(default="#F7F7F7")
+    neutral_focus = param.String(default="#888888")
+    neutral_foreground_rest = param.String(default="#2B2B2B")
 
-    header_background = param.Color(default="#00aa41")
-    header_color = param.Color(default="#ffffff")
+    header_background = param.String(default="#00aa41")
+    header_neutral_color = param.String(default="#ffffff")
+    header_accent_base_color = param.String(default="#A01346")
+    header_color = param.String(default="#ffffff")
     font = param.String(default="Open Sans, sans-serif")
     font_url = param.String(default=FONT_URL)
+    corner_radius = param.Integer(default=3)
+    shadow = param.Boolean(default=True)
 
     def create_bokeh_theme(self):
         """Returns a custom bokeh theme based on the style parameters
@@ -78,15 +71,16 @@ class FastStyle(param.Parameterized):
                 },
                 "Grid": {"grid_line_color": self.neutral_focus, "grid_line_alpha": 0.25},
                 "Axis": {
-                    "major_tick_line_alpha": 0,
+                    "major_tick_line_alpha": 0.5,
                     "major_tick_line_color": self.neutral_foreground_rest,
-                    "minor_tick_line_alpha": 0,
+                    "minor_tick_line_alpha": 0.25,
                     "minor_tick_line_color": self.neutral_foreground_rest,
-                    "axis_line_alpha": 0,
+                    "axis_line_alpha": 0.1,
                     "axis_line_color": self.neutral_foreground_rest,
                     "major_label_text_color": self.neutral_foreground_rest,
                     "major_label_text_font": self.font,
-                    "major_label_text_font_size": "1.025em",
+                    # Should be added back when bokeh 2.3.3 is released and https://github.com/bokeh/bokeh/issues/11110 fixed
+                    # "major_label_text_font_size": "1.025em",
                     "axis_label_standoff": 10,
                     "axis_label_text_color": self.neutral_foreground_rest,
                     "axis_label_text_font": self.font,
@@ -128,24 +122,15 @@ class FastStyle(param.Parameterized):
 
 DEFAULT_STYLE = FastStyle()
 DARK_STYLE = FastStyle(
-    header_background="#313131",
-    header_color="#ffffff",
-    accent_fill_active="#DC2567",
-    accent_fill_hover="#E1477E",
-    accent_fill_rest="#C01754",
-    accent_foreground_active="#DF3874",
-    accent_foreground_cut="#000000",
-    accent_foreground_hover="#E55E8E",
-    accent_foreground_rest="#E1477E",
-    neutral_outline_active="#424242",
-    neutral_outline_hover="#808080",
-    neutral_outline_rest="#5A5A5A",
     accent_base_color="#E1477E",
     background_color="#181818",
     color="#ffffff",
+    header_background="#313131",
+    header_color="#ffffff",
     neutral_fill_card_rest="#212121",
     neutral_focus="#717171",
     neutral_foreground_rest="#e5e5e5",
+    shadow = False,
 )
 
 class FastDefaultTheme(DefaultTheme):

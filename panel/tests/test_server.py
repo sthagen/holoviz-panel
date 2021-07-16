@@ -42,7 +42,7 @@ def test_server_change_io_state(html_server_session):
         assert state.curdoc is session.document
 
     html.param.watch(handle_event, 'object')
-    html._server_change(session.document, None, 'text', '<h1>Title</h1>', '<h1>New Title</h1>')
+    html._server_change(session.document, None, None, 'text', '<h1>Title</h1>', '<h1>New Title</h1>')
 
 
 def test_server_static_dirs():
@@ -161,6 +161,32 @@ def test_server_async_callbacks():
     finally:
         server.stop()
 
+
+def test_serve_config_per_session_state():
+    CSS1 = 'body { background-color: red }'
+    CSS2 = 'body { background-color: green }'
+    def app1():
+        config.raw_css = [CSS1]
+    def app2():
+        config.raw_css = [CSS2]
+
+    server1 = serve(app1, port=6004, threaded=True, show=False)
+    server2 = serve(app2, port=6005, threaded=True, show=False)
+
+    r1 = requests.get("http://localhost:6004/").content.decode('utf-8')
+    r2 = requests.get("http://localhost:6005/").content.decode('utf-8')
+
+    try:
+        assert CSS1 not in config.raw_css
+        assert CSS2 not in config.raw_css
+        assert CSS1 in r1
+        assert CSS2 not in r1
+        assert CSS1 not in r2
+        assert CSS2 in r2
+    finally:
+        server1.stop()
+        server2.stop()
+    
 
 def test_server_session_info():
     with config.set(session_history=-1):

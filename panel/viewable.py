@@ -203,18 +203,30 @@ class Layoutable(param.Parameterized):
             provided aspect ratio.
     """)
 
+    visible = param.Boolean(default=True, doc="""
+        Whether the component is visible. Setting visible to false will
+        hide the component entirely.""")
+
     __abstract = True
 
     def __init__(self, **params):
-        if (params.get('width', None) is not None and
-            params.get('height', None) is not None and
+        if (params.get('width') is not None and
+            params.get('height') is not None and
             params.get('width_policy') is None and
             params.get('height_policy') is None and
             'sizing_mode' not in params):
             params['sizing_mode'] = 'fixed'
         elif (not (self.param.sizing_mode.constant or self.param.sizing_mode.readonly) and
-              type(self).sizing_mode is None):
-            params['sizing_mode'] = params.get('sizing_mode', config.sizing_mode)
+              type(self).sizing_mode is None and 'sizing_mode' not in params):
+            if config.sizing_mode == 'stretch_both':
+                if params.get('height') is not None:
+                    params['sizing_mode'] = 'stretch_width'
+                elif params.get('width') is not None:
+                    params['sizing_mode'] = 'stretch_height'
+                else:
+                    params['sizing_mode'] = config.sizing_mode
+            else:
+                params['sizing_mode'] = config.sizing_mode
         super().__init__(**params)
 
 
@@ -290,7 +302,7 @@ class ServableMixin(object):
     # Public API
     #----------------------------------------------------------------
 
-    def servable(self, title=None, location=True):
+    def servable(self, title=None, location=True, area='main'):
         """
         Serves the object if in a `panel serve` context and returns
         the Panel object to allow it to display itself in a notebook
@@ -302,6 +314,9 @@ class ServableMixin(object):
         location : boolean or panel.io.location.Location
           Whether to create a Location component to observe and
           set the URL location.
+        area: str
+          The area of a template to add the component too. Only has an
+          effect if pn.config.template has been set.
 
         Returns
         -------
@@ -312,7 +327,20 @@ class ServableMixin(object):
             for handler in logger.handlers:
                 if isinstance(handler, logging.StreamHandler):
                     handler.setLevel(logging.WARN)
-            self.server_doc(title=title, location=True)
+            if config.template:
+                template = state.template
+                if template.title == template.param.title.default and title:
+                    template.title = title
+                if area == 'main':
+                    template.main.append(self)
+                elif area == 'sidebar':
+                    template.sidebar.append(self)
+                elif area == 'modal':
+                    template.modal.append(self)
+                elif area == 'header':
+                    template.header.append(self)
+            else:
+                self.server_doc(title=title, location=location)
         return self
 
     def show(self, title=None, port=0, address=None, websocket_origin=None,
@@ -700,7 +728,7 @@ class Viewable(Renderable, Layoutable, ServableMixin):
     def save(self, filename, title=None, resources=None, template=None,
              template_variables=None, embed=False, max_states=1000,
              max_opts=3, embed_json=False, json_prefix='', save_path='./',
-             load_path=None, progress=True, embed_states={}):
+             load_path=None, progress=True, embed_states={}, **kwargs):
         """
         Saves Panel objects to file.
 
@@ -738,7 +766,7 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         return save(self, filename, title, resources, template,
                     template_variables, embed, max_states, max_opts,
                     embed_json, json_prefix, save_path, load_path,
-                    progress, embed_states)
+                    progress, embed_states, **kwargs)
 
     def server_doc(self, doc=None, title=None, location=True):
         """

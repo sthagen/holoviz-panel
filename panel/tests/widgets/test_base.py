@@ -2,25 +2,43 @@ import param
 import pytest
 
 from panel.io import block_comm
+from panel.layout import Row
+from panel.links import CallbackGenerator
 from panel.widgets import (
-    CompositeWidget, Dial, FileDownload, FloatSlider, TextInput, ToggleGroup, Widget
+    CompositeWidget, Dial, FileDownload, FloatSlider, TextInput,
+    Terminal, ToggleGroup, Tqdm, Widget
 )
 from panel.widgets.tables import BaseTable
-from panel.tests.util import check_layoutable_properties, py3_only
+from panel.tests.util import check_layoutable_properties
+
+excluded = (
+    BaseTable, CompositeWidget, Dial, FileDownload, ToggleGroup, Terminal,
+    Tqdm
+)
 
 all_widgets = [
     w for w in param.concrete_descendents(Widget).values()
-    if not w.__name__.startswith('_') and
-    not issubclass(w, (CompositeWidget, BaseTable, FileDownload, ToggleGroup, Dial))
+    if not w.__name__.startswith('_') and not issubclass(w, excluded)
 ]
 
-
-@py3_only
 @pytest.mark.parametrize('widget', all_widgets)
 def test_widget_signature(widget):
     from inspect import signature
     parameters = signature(widget).parameters
     assert len(parameters) == 1
+
+
+@pytest.mark.parametrize('widget', all_widgets)
+def test_widget_linkable_params(widget):
+    w = widget()
+    controls = w.controls(jslink=True)
+    layout = Row(w, controls)
+
+    try:
+        CallbackGenerator.error = True
+        layout.get_root()
+    finally:
+        CallbackGenerator.error = False
 
 
 @pytest.mark.parametrize('widget', all_widgets)
@@ -149,3 +167,4 @@ def test_widget_from_param_instance_with_kwargs():
 
     widget.value = 4.3
     assert test.a == 4.3
+
