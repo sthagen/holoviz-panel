@@ -32,7 +32,7 @@ from .io.notebook import (
 from .io.save import save
 from .io.state import state
 from .io.server import init_doc, serve
-from .util import escape, param_reprs
+from .util import bokeh_version, escape, param_reprs
 
 
 class Layoutable(param.Parameterized):
@@ -266,7 +266,10 @@ class ServableMixin(object):
         """
         root, doc, comm = state._views[ref][1:]
         patch_cds_msg(root, msg)
-        held = doc._hold
+        if bokeh_version >= '2.4':
+            held = doc.callbacks.hold_value
+        else:
+            held = doc._hold
         patch = manager.assemble(msg)
         doc.hold()
         patch.apply_to_document(doc, comm.id)
@@ -403,6 +406,10 @@ class Renderable(param.Parameterized):
         self._comms = {}
         self._kernels = {}
         self._found_links = set()
+        self._logger = logging.getLogger(f'{__name__}.{type(self).__name__}')
+
+    def _log(self, msg, *args, level='debug'):
+        getattr(self._logger, level)(f'Session %s {msg}', id(state.curdoc), *args)
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
         """
@@ -479,6 +486,7 @@ class Renderable(param.Parameterized):
             if session['rendered'] is not None:
                 state.session_info['live'] -= 1
             session['ended'] = dt.datetime.now().timestamp()
+            state.param.trigger('session_info')
         doc = session_context._document
         root = self._documents[doc]
         ref = root.ref['id']

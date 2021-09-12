@@ -4,6 +4,7 @@ Utilities for creating bokeh Server instances.
 import datetime as dt
 import html
 import inspect
+import logging
 import os
 import pathlib
 import signal
@@ -46,10 +47,15 @@ from tornado.web import RequestHandler, StaticFileHandler, authenticated
 from tornado.wsgi import WSGIContainer
 
 # Internal imports
-from ..util import edit_readonly
+from ..util import bokeh_version, doc_event_obj, edit_readonly
+from .logging import LOG_SESSION_CREATED, LOG_SESSION_DESTROYED, LOG_SESSION_LAUNCHING
+
+from .profile import profile_ctx
 from .reload import autoreload_watcher
 from .resources import BASE_TEMPLATE, Resources, bundle_resources
 from .state import state
+
+logger = logging.getLogger(__name__)
 
 #---------------------------------------------------------------------
 # Private API
@@ -114,13 +120,14 @@ def _initialize_session_info(session_context):
     from ..config import config
     session_id = session_context.id
     sessions = state.session_info['sessions']
-    if config.session_history == 0 or session_id in sessions:
+    history = -1 if config._admin else config.session_history
+    if not config._admin and (history == 0 or session_id in sessions):
         return
 
     state.session_info['total'] += 1
-    if config.session_history > 0 and len(sessions) >= config.session_history:
+    if history > 0 and len(sessions) >= history:
         old_history = list(sessions.items())
-        sessions = OrderedDict(old_history[-(config.session_history-1):])
+        sessions = OrderedDict(old_history[-(history-1):])
         state.session_info['sessions'] = sessions
     sessions[session_id] = {
         'launched': dt.datetime.now().timestamp(),
@@ -129,6 +136,7 @@ def _initialize_session_info(session_context):
         'ended': None,
         'user_agent': session_context.request.headers.get('User-Agent')
     }
+    state.param.trigger('session_info')
 
 state.on_session_created(_initialize_session_info)
 
@@ -205,6 +213,7 @@ class DocHandler(BkDocHandler, SessionPrefixHandler):
         with self._session_prefix():
             session = await self.get_session()
             state.curdoc = session.document
+            logger.info(LOG_SESSION_CREATED, id(session.document))
             try:
                 resources = Resources.from_bokeh(self.application.resources())
                 page = server_html_page_for_session(
@@ -270,6 +279,8 @@ def modify_document(self, doc):
     from bokeh.io.doc import set_curdoc as bk_set_curdoc
     from ..config import config
 
+    logger.info(LOG_SESSION_LAUNCHING, id(doc))
+
     if config.autoreload:
         path = self._runner.path
         argv = self._runner._argv
@@ -289,15 +300,23 @@ def modify_document(self, doc):
     # stored modules are used to provide correct paths to
     # custom models resolver.
     sys.modules[module.__name__] = module
-    doc._modules.append(module)
+    if bokeh_version >= '2.4.0':
+        doc.modules._modules.append(module)
+
+    else:
+        doc._modules.append(module)
 
     old_doc = curdoc()
     bk_set_curdoc(doc)
-    old_io = self._monkeypatch_io()
+
+    if bokeh_version < '2.4.0':
+        old_io = self._monkeypatch_io()
 
     if config.autoreload:
         set_curdoc(doc)
         state.onload(autoreload_watcher)
+
+    sessions = []
 
     try:
         def post_check():
@@ -306,7 +325,11 @@ def modify_document(self, doc):
             # otherwise it will erroneously complain that there is
             # a memory leak
             if config.autoreload:
-                newdoc._modules = []
+                if bokeh_version >= '2.4.0':
+                    newdoc.modules._modules = []
+                else:
+                    newdoc._modules = []
+
             # script is supposed to edit the doc not replace it
             if newdoc is not doc:
                 raise RuntimeError("%s at '%s' replaced the output document" % (self._origin, self._runner.path))
@@ -317,7 +340,11 @@ def modify_document(self, doc):
 
             # Clean up
             del sys.modules[module.__name__]
-            doc._modules.remove(module)
+
+            if hasattr(doc, 'modules'):
+                doc.modules._modules.remove(module)
+            else:
+                doc._modules.remove(module)
             bokeh.application.handlers.code_runner.handle_exception = handle_exception
             tb = html.escape(traceback.format_exc())
 
@@ -329,9 +356,32 @@ def modify_document(self, doc):
 
         if config.autoreload:
             bokeh.application.handlers.code_runner.handle_exception = handle_exception
-        self._runner.run(module, post_check)
+
+        state._launching.append(doc)
+        if bokeh_version >= '2.4.0':
+            from bokeh.application.handlers.code import _monkeypatch_io, patch_curdoc
+            with _monkeypatch_io(self._loggers):
+                with patch_curdoc(doc):
+                    with profile_ctx(config.profiler) as sessions:
+                        self._runner.run(module, post_check)
+        else:
+            with profile_ctx(config.profiler) as sessions:
+                self._runner.run(module, post_check)
+
+        def _log_session_destroyed(session_context):
+            logger.info(LOG_SESSION_DESTROYED, id(doc))
+        doc.on_session_destroyed(_log_session_destroyed)
     finally:
-        self._unmonkeypatch_io(old_io)
+        state._launching.remove(doc)
+        if config.profiler:
+            try:
+                path = doc.session_context.request.path
+                state._profiles[(path, config.profiler)] += sessions
+                state.param.trigger('_profiles')
+            except Exception:
+                pass
+        if bokeh_version < '2.4.0':
+            self._unmonkeypatch_io(old_io)
         bk_set_curdoc(old_doc)
 
 CodeHandler.modify_document = modify_document
@@ -402,9 +452,10 @@ def unlocked():
         return
     connections = curdoc.session_context.session._subscribed_connections
 
-    hold = curdoc._hold
+    event_obj = doc_event_obj(curdoc)
+    hold = event_obj._hold
     if hold:
-        old_events = list(curdoc._held_events)
+        old_events = list(event_obj._held_events)
     else:
         old_events = []
         curdoc.hold()
@@ -416,7 +467,7 @@ def unlocked():
             if hasattr(socket, 'write_lock') and socket.write_lock._block._value == 0:
                 state._locks.add(socket)
             locked = socket in state._locks
-            for event in curdoc._held_events:
+            for event in event_obj._held_events:
                 if (isinstance(event, ModelChangedEvent) and event not in old_events
                     and hasattr(socket, 'write_message') and not locked):
                     msg = conn.protocol.create('PATCH-DOC', [event])
@@ -428,7 +479,7 @@ def unlocked():
                         WebSocketHandler.write_message(socket, payload, binary=True)
                 elif event not in events:
                     events.append(event)
-        curdoc._held_events = events
+        event_obj._held_events = events
     finally:
         if not hold:
             curdoc.unhold()
@@ -491,6 +542,8 @@ def serve(panels, port=0, address=None, websocket_origin=None, loop=None,
         server = StoppableThread(
             target=get_server, io_loop=loop, args=(panels,), kwargs=kwargs
         )
+        server_id = kwargs.get('server_id', uuid.uuid4().hex)
+        state._threads[server_id] = server
         server.start()
     else:
         server = get_server(panels, **kwargs)

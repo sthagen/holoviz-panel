@@ -4,6 +4,7 @@ which provides convenient support for  loading and configuring panel
 components.
 """
 import ast
+import copy
 import inspect
 import os
 import sys
@@ -17,6 +18,7 @@ from pyviz_comms import (
     JupyterCommManager as _JupyterCommManager, extension as _pyviz_extension
 )
 
+from .io.logging import panel_log_handler
 from .io.notebook import load_notebook
 from .io.state import state
 
@@ -94,6 +96,10 @@ class _config(_base_config):
     loading_color = param.Color(default='#c3c3c3', doc="""
         Color of the loading indicator.""")
 
+    profiler = param.Selector(default=None, allow_None=True, objects=[
+        'pyinstrument', 'snakeviz'], doc="""
+        The profiler engine to enable.""")
+
     safe_embed = param.Boolean(default=False, doc="""
         Ensure all bokeh property changes trigger events which are
         embedded. Useful when only partial updates are made in an
@@ -149,7 +155,7 @@ class _config(_base_config):
         Where to save json files for embedded state.""")
 
     _log_level = param.Selector(
-        default=None, objects=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='WARNING', objects=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
         doc="Log level of Panel loggers")
 
     _oauth_provider = param.ObjectSelector(
@@ -178,6 +184,8 @@ class _config(_base_config):
         Whether to inline JS and CSS resources. If disabled, resources
         are loaded from CDN if one is available.""")
 
+    _admin = param.Boolean(default=False, doc="Whether the admin panel was enabled.")
+
     _truthy = ['True', 'true', '1', True, 1]
 
     _session_config = WeakKeyDictionary()
@@ -188,6 +196,8 @@ class _config(_base_config):
         for p in self.param:
             if p.startswith('_'):
                 setattr(self, p+'_', None)
+        if self.log_level:
+            panel_log_handler.setLevel(self.log_level)
 
     @contextmanager
     def set(self, **kwargs):
@@ -223,6 +233,10 @@ class _config(_base_config):
         else:
             super().__setattr__(attr, value)
 
+    @param.depends('_log_level', watch=True)
+    def _update_log_level(self):
+        panel_log_handler.setLevel(self._log_level)
+
     def __getattribute__(self, attr):
         from .io.state import state
         init = super().__getattribute__('initialized')
@@ -235,10 +249,8 @@ class _config(_base_config):
             session_config[state.curdoc] = {}
         if (attr in ('raw_css', 'css_files', 'js_files', 'js_modules') and
             state.curdoc and attr not in session_config[state.curdoc]):
-            if 'css' in attr:
-                setattr(self, attr, super().__getattribute__(attr))
-            else:
-                setattr(self, attr, super().__getattribute__(attr))
+            new_obj = copy.copy(super().__getattribute__(attr))
+            setattr(self, attr, new_obj)
         if state.curdoc and state.curdoc in session_config and attr in session_config[state.curdoc]:
             return session_config[state.curdoc][attr]
         elif f'_{attr}' in params and getattr(self, f'_{attr}_') is not None:

@@ -252,6 +252,7 @@ class Syncable(Renderable):
             self._apply_update(events, msg, model, ref)
 
     def _process_events(self, events):
+        self._log('received events %s', events)
         busy = state.busy
         with edit_readonly(state):
             state.busy = True
@@ -270,6 +271,7 @@ class Syncable(Renderable):
                 with edit_readonly(obj):
                     obj.param.set_param(**{p: v})
         finally:
+            self._log('finished processing events %s', events)
             with edit_readonly(state):
                 state.busy = busy
 
@@ -1194,6 +1196,8 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
 
     _scripts = {}
 
+    _script_assignment = r'data.([^[^\d\W]\w*)[ ]*[\+,\-,\*,\\,%,\*\*,<<,>>,>>>,&,^,|,&&,||,??]*='
+
     __abstract = True
 
     def __init__(self, **params):
@@ -1430,11 +1434,7 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
             if not isinstance(scripts, list):
                 scripts = [scripts]
             for script in scripts:
-                attrs = (
-                    list(re.findall('data.([a-zA-Z_]\S+)=', script)) +
-                    list(re.findall('data.([a-zA-Z_]\S+) =', script))
-                )
-                for p in attrs:
+                for p in re.findall(self._script_assignment, script):
                     if p not in linked_properties:
                         linked_properties.append(p)
         for children_param in self._parser.children.values():
@@ -1486,7 +1486,7 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
             model.update(**msg)
         finally:
             if old:
-                self._chaning[root.ref['id']] = old
+                self._changing[root.ref['id']] = old
             else:
                 del self._changing[root.ref['id']]
 
