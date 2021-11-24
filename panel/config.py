@@ -96,6 +96,9 @@ class _config(_base_config):
     loading_color = param.Color(default='#c3c3c3', doc="""
         Color of the loading indicator.""")
 
+    loading_max_height = param.Integer(default=400, doc="""
+        Maximum height of the loading indicator.""")
+
     profiler = param.Selector(default=None, allow_None=True, objects=[
         'pyinstrument', 'snakeviz'], doc="""
         The profiler engine to enable.""")
@@ -162,6 +165,9 @@ class _config(_base_config):
         default=None, allow_None=True, objects=[], doc="""
         Select between a list of authentification providers.""")
 
+    _oauth_expiry = param.Number(default=1, bounds=(0, None), doc="""
+        Expiry of the OAuth cookie in number of days.""")
+
     _oauth_key = param.String(default=None, doc="""
         A client key to provide to the OAuth provider.""")
 
@@ -201,14 +207,14 @@ class _config(_base_config):
 
     @contextmanager
     def set(self, **kwargs):
-        values = [(k, v) for k, v in self.param.get_param_values() if k != 'name']
+        values = [(k, v) for k, v in self.param.values().items() if k != 'name']
         overrides = [(k, getattr(self, k+'_')) for k in self.param if k.startswith('_')]
         for k, v in kwargs.items():
             setattr(self, k, v)
         try:
             yield
         finally:
-            self.param.set_param(**dict(values))
+            self.param.update(**dict(values))
             for k, v in overrides:
                 setattr(self, k+'_', v)
 
@@ -315,6 +321,11 @@ class _config(_base_config):
         return provider.lower() if provider else None
 
     @property
+    def oauth_expiry(self):
+        provider = os.environ.get('PANEL_OAUTH_EXPIRY', _config._oauth_expiry)
+        return float(provider)
+
+    @property
     def oauth_key(self):
         return os.environ.get('PANEL_OAUTH_KEY', _config._oauth_key)
 
@@ -379,7 +390,8 @@ class panel_extension(_pyviz_extension):
         'perspective': 'panel.models.perspective',
         'terminal': 'panel.models.terminal',
         'tabulator': 'panel.models.tabulator',
-        'gridstack': 'panel.layout.gridstack'
+        'gridstack': 'panel.layout.gridstack',
+        'texteditor': 'panel.models.quill'
     }
 
     # Check whether these are loaded before rendering (if any item

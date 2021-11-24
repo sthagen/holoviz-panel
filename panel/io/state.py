@@ -162,7 +162,7 @@ class _state(param.Parameterized):
                 if id(parameterized) in _updating:
                     continue
                 try:
-                    parameterized.param.set_param(**values)
+                    parameterized.param.update(**values)
                 except Exception:
                     raise
                 finally:
@@ -175,8 +175,20 @@ class _state(param.Parameterized):
         return link
 
     def _on_load(self, event):
-        for cb in self._onload.pop(self.curdoc, []):
-            cb()
+        callbacks = self._onload.pop(self.curdoc, [])
+        if not callbacks:
+            return
+
+        from ..config import config
+        from .profile import profile_ctx
+        if (self.curdoc and self.curdoc in self._launching) or not config.profiler:
+            for cb in callbacks: cb()
+            return
+        with profile_ctx(config.profiler) as sessions:
+            for cb in callbacks: cb()
+        path = self.curdoc.session_context.request.path
+        self._profiles[(path+':on_load', config.profiler)] += sessions
+        self.param.trigger('_profiles')
 
     #----------------------------------------------------------------
     # Public Methods
@@ -346,8 +358,8 @@ class _state(param.Parameterized):
             parameterizeds, old_parameters, cb = self._rest_endpoints[endpoint]
             if set(parameters) != set(old_parameters):
                 raise ValueError("Param REST API output parameters must match across sessions.")
-            values = {k: v for k, v in parameterizeds[0].param.get_param_values() if k in parameters}
-            parameterized.param.set_param(**values)
+            values = {k: v for k, v in parameterizeds[0].param.values().items() if k in parameters}
+            parameterized.param.update(**values)
             parameterizeds.append(parameterized)
         else:
             cb = self._get_callback(endpoint)

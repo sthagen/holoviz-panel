@@ -68,7 +68,7 @@ class Accordion(NamedListPanel):
             if obj not in self.objects:
                 self._panels[id(obj)]._cleanup(root)
 
-        params = {k: v for k, v in self.param.get_param_values()
+        params = {k: v for k, v in self.param.values().items()
                   if k in self._synced_properties}
 
         ref = root.ref['id']
@@ -85,7 +85,7 @@ class Accordion(NamedListPanel):
                 )
                 card.param.watch(self._set_active, ['collapsed'])
                 self._panels[id(pane)] = card
-            card.param.set_param(**params)
+            card.param.update(**params)
             if ref in card._models:
                 panel = card._models[ref][0]
             else:
@@ -118,15 +118,20 @@ class Accordion(NamedListPanel):
     def _set_active(self, *events):
         if self._updating_active:
             return
-        active = []
         self._updating_active = True
         try:
-            for i, pane in enumerate(self.objects):
-                if id(pane) not in self._panels:
-                    continue
-                elif not self._panels[id(pane)].collapsed:
-                    active.append(i)
-            self.active = active
+            if self.toggle and not events[0].new:
+                active = [list(self._panels.values()).index(events[0].obj)]
+            else:
+                active = []
+                for i, pane in enumerate(self.objects):
+                    if id(pane) not in self._panels:
+                        continue
+                    elif not self._panels[id(pane)].collapsed:
+                        active.append(i)
+            
+            if not self.toggle or active:
+                self.active = active
         finally:
             self._updating_active = False
 
@@ -143,7 +148,7 @@ class Accordion(NamedListPanel):
             self._updating_active = False
 
     def _update_cards(self, *events):
-        params = {k: v for k, v in self.param.get_param_values()
+        params = {k: v for k, v in self.param.values().items()
                   if k in self._synced_properties}
         for panel in self._panels.values():
-            panel.param.set_param(**params)
+            panel.param.update(**params)

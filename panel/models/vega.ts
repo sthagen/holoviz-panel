@@ -4,11 +4,15 @@ import {HTMLBox, HTMLBoxView} from "@bokehjs/models/layouts/html_box"
 
 export class VegaPlotView extends HTMLBoxView {
   model: VegaPlot
+  vega_view: any
   _connected: string[]
 
   connect_signals(): void {
     super.connect_signals()
-    this.connect(this.model.properties.data.change, this._plot)
+    const {data, show_actions, theme} = this.model.properties
+    this.on_change([data, show_actions, theme], () => {
+      this._plot()
+    })
     this.connect(this.model.properties.data_sources.change, () => this._connect_sources())
     this._connected = []
     this._connect_sources()
@@ -68,7 +72,34 @@ export class VegaPlotView extends HTMLBoxView {
       }
       this.model.data['datasets'] = datasets
     }
-    (window as any).vegaEmbed(this.el, this.model.data, {actions: false})
+    const config: any = {actions: this.model.show_actions, theme: this.model.theme};
+    (window as any).vegaEmbed(this.el, this.model.data, config).then((result: any) => {
+      this.vega_view = result.view
+      this.relayout()
+      if (this.vega_view._viewHeight <= 0 || this.vega_view._viewWidth <= 0) {
+	(window as any).dispatchEvent(new Event('resize'));
+      }
+    })
+  }
+
+  relayout(): void {
+    this.update_layout()
+    this.compute_layout()
+    if (this.root !== this)
+      this.invalidate_layout()
+    else if ((this as any)._parent != undefined) // HACK: Support ReactiveHTML
+      (this as any)._parent.invalidate_layout()
+  }
+
+  box_sizing(): any {
+    const sizing = super.box_sizing()
+    if (this.vega_view != null) {
+      if (sizing.height_policy === "fixed")
+	sizing.height = this.vega_view._viewHeight
+      if (sizing.width_policy === "fixed")
+	sizing.width = this.vega_view._viewWidth
+    }
+    return sizing
   }
 }
 
@@ -77,6 +108,8 @@ export namespace VegaPlot {
   export type Props = HTMLBox.Props & {
     data: p.Property<any>
     data_sources: p.Property<any>
+    show_actions: p.Property<boolean>
+    theme: p.Property<string | null>
   }
 }
 
@@ -94,9 +127,11 @@ export class VegaPlot extends HTMLBox {
   static init_VegaPlot(): void {
     this.prototype.default_view = VegaPlotView
 
-    this.define<VegaPlot.Props>(({Any}) => ({
-      data:         [ Any, {} ],
-      data_sources: [ Any, {} ],
+    this.define<VegaPlot.Props>(({Any, Boolean, String}) => ({
+      data:         [ Any,        {} ],
+      data_sources: [ Any,        {} ],
+      show_actions: [ Boolean, false ],
+      theme:        [ String,        ]
     }))
   }
 }

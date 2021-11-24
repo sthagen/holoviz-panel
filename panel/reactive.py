@@ -5,6 +5,7 @@ models rendered on the frontend.
 """
 
 import difflib
+import datetime as dt
 import re
 import sys
 import textwrap
@@ -19,7 +20,7 @@ import param
 
 from bokeh.models import LayoutDOM
 from bokeh.model import DataModel
-from param.parameterized import ParameterizedMetaclass
+from param.parameterized import ParameterizedMetaclass, Watcher
 from tornado import gen
 
 from .config import config
@@ -33,7 +34,7 @@ from .models.reactive_html import (
 from .util import edit_readonly, escape, updating
 from .viewable import Layoutable, Renderable, Viewable
 
-LinkWatcher = namedtuple("Watcher","inst cls fn mode onlychanged parameter_names what queued target links transformed bidirectional_watcher")
+LinkWatcher = namedtuple("Watcher", Watcher._fields+('target', 'links', 'transformed', 'bidirectional_watcher'))
 
 
 class Syncable(Renderable):
@@ -145,7 +146,7 @@ class Syncable(Renderable):
         return [p for p in self.param if p not in self._manual_params+ignored]
 
     def _init_params(self):
-        return {k: v for k, v in self.param.get_param_values()
+        return {k: v for k, v in self.param.values().items()
                 if k in self._synced_params and v is not None}
 
     def _link_params(self):
@@ -260,7 +261,7 @@ class Syncable(Renderable):
         try:
             with edit_readonly(self):
                 self_events = {k: v for k, v in events.items() if '.' not in k}
-                self.param.set_param(**self_events)
+                self.param.update(**self_events)
             for k, v in self_events.items():
                 if '.' not in k:
                     continue
@@ -269,7 +270,7 @@ class Syncable(Renderable):
                 for sp in subpath:
                     obj = getattr(obj, sp)
                 with edit_readonly(obj):
-                    obj.param.set_param(**{p: v})
+                    obj.param.update(**{p: v})
         finally:
             self._log('finished processing events %s', events)
             with edit_readonly(state):
@@ -301,6 +302,16 @@ class Syncable(Renderable):
 
         with hold(doc, comm=comm):
             self._process_events({attr: new})
+
+    def _server_event(self, doc, event):
+        state._locks.clear()
+        if doc.session_context:
+            doc.add_timeout_callback(
+                partial(self._process_event, event),
+                self._debounce
+            )
+        else:
+            self._process_event(event)
 
     def _server_change(self, doc, ref, subpath, attr, old, new):
         if subpath:
@@ -398,7 +409,12 @@ class Reactive(Syncable, Viewable):
                         _reverse_updating.remove(event.name)
             bidirectional_watcher = target.param.watch(reverse_link, list(reverse_links))
 
-        link = LinkWatcher(*tuple(cb)+(target, links, callbacks is not None, bidirectional_watcher))
+        link_args = tuple(cb)
+        # Compatibility with Param versions where precedence is dropped
+        # from iterator for backward compatibility with older Panel versions
+        if 'precedence' in Watcher._fields and len(link_args) < len(Watcher._fields):
+            link_args += (cb.precedence,)
+        link = LinkWatcher(*(link_args+(target, links, callbacks is not None, bidirectional_watcher)))
         self._links.append(link)
         return cb
 
@@ -640,7 +656,7 @@ class SyncableData(Reactive):
         data[column] = array
 
     def _update_data(self, data):
-        self.param.set_param(**{self._data_params[0]: data})
+        self.param.update(**{self._data_params[0]: data})
 
     def _manual_update(self, events, model, doc, root, parent, comm):
         for event in events:
@@ -663,6 +679,13 @@ class SyncableData(Reactive):
         for ref, (m, _) in self._models.items():
             self._apply_update(events, msg, m.source.selected, ref)
 
+    def _apply_stream(self, ref, model, stream, rollover):
+        self._changing[ref] = ['data']
+        try:
+            model.source.stream(stream, rollover)
+        finally:
+            del self._changing[ref]
+
     @updating
     def _stream(self, stream, rollover=None):
         self._processed, _ = self._get_data()
@@ -676,8 +699,15 @@ class SyncableData(Reactive):
                 if comm and 'embedded' not in root.tags:
                     push(doc, comm)
             else:
-                cb = partial(m.source.stream, stream, rollover)
+                cb = partial(self._apply_stream, ref, m, stream, rollover)
                 doc.add_next_tick_callback(cb)
+
+    def _apply_patch(self, ref, model, patch):
+        self._changing[ref] = ['data']
+        try:
+            model.source.patch(patch)
+        finally:
+            del self._changing[ref]
 
     @updating
     def _patch(self, patch):
@@ -691,8 +721,19 @@ class SyncableData(Reactive):
                 if comm and 'embedded' not in root.tags:
                     push(doc, comm)
             else:
-                cb = partial(m.source.patch, patch)
+                cb = partial(self._apply_patch, ref, m, patch)
                 doc.add_next_tick_callback(cb)
+
+    def _update_manual(self, *events):
+        """
+        Skip events triggered internally
+        """
+        processed_events = []
+        for e in events:
+            if e.name == self._data_params[0] and e.type == 'triggered' and self._updating:
+                continue
+            processed_events.append(e)
+        super()._update_manual(*processed_events)
 
     def stream(self, stream_value, rollover=None, reset_index=True):
         """
@@ -904,46 +945,74 @@ class ReactiveData(SyncableData):
     def _update_selection(self, indices):
         self.selection = indices
 
+    def _process_data(self, data):
+        if self._updating:
+            return
+
+        # Get old data to compare to
+        old_raw, old_data = self._get_data()
+        if hasattr(old_raw, 'copy'):
+            old_raw = old_raw.copy()
+        elif isinstance(old_raw, dict):
+            old_raw = dict(old_raw)
+
+        updated = False
+        for k, v in data.items():
+            if k in self.indexes:
+                continue
+            k = self._renamed_cols.get(k, k)
+            if isinstance(v, dict):
+                v = [v for _, v in sorted(v.items(), key=lambda it: int(it[0]))]
+            v = np.asarray(v)
+            old_dtype = old_raw[k].dtype
+            if old_dtype.kind == 'M':
+                if v.dtype.kind in 'if':
+                    v = (v * 10e5).astype(old_raw[k].dtype)
+            elif old_dtype.kind == 'O':
+                if (all(isinstance(ov, dt.date) for ov in old_raw[k]) and
+                    not all(isinstance(iv, dt.date) for iv in v)):
+                    vs = []
+                    for iv in v:
+                        if isinstance(iv, dt.datetime):
+                            iv = iv.date()
+                        elif not isinstance(iv, dt.date):
+                            iv = dt.date.fromtimestamp(iv/1000)
+                        vs.append(iv)
+                    v = vs
+            else:
+                v = v.astype(old_raw[k].dtype)
+            try:
+                isequal = (old_raw[k] == v).all()
+            except Exception:
+                isequal = False
+            if not isequal:
+                self._update_column(k, v)
+                updated = True
+
+        # If no columns were updated we don't have to sync data
+        if not updated:
+            return
+
+        # Ensure we trigger events
+        self._updating = True
+        old_data = getattr(self, self._data_params[0])
+        try:
+            if old_raw is self.value:
+                with param.discard_events(self):
+                    self.value = old_raw
+                self.value = data
+            else:
+                self.param.trigger('value')
+        finally:
+            self._updating = False
+        # Ensure that if the data was changed in a user
+        # callback, we still send the updated data
+        if old_data is not self.value:
+            self._update_cds()
+
     def _process_events(self, events):
         if 'data' in events:
-            data = events.pop('data')
-            if self._updating:
-                data = {}
-            old_raw, old_data = self._get_data()
-            if hasattr(old_raw, 'copy'):
-                old_raw = old_raw.copy()
-            elif isinstance(old_raw, dict):
-                old_raw = dict(old_raw)
-            updated = False
-            for k, v in data.items():
-                if k in self.indexes:
-                    continue
-                k = self._renamed_cols.get(k, k)
-                if isinstance(v, dict):
-                    v = [v for _, v in sorted(v.items(), key=lambda it: int(it[0]))]
-                try:
-                    isequal = (old_data[k] == np.asarray(v)).all()
-                except Exception:
-                    isequal = False
-                if not isequal:
-                    self._update_column(k, v)
-                    updated = True
-            if updated:
-                self._updating = True
-                old_data = getattr(self, self._data_params[0])
-                try:
-                    if old_raw is self.value:
-                        with param.discard_events(self):
-                            self.value = old_raw
-                        self.value = data
-                    else:
-                        self.param.trigger('value')
-                finally:
-                    self._updating = False
-                # Ensure that if the data was changed in a user
-                # callback, we still send the updated data
-                if old_data is not self.value:
-                    self._update_cds()
+            self._process_data(events.pop('data'))
         if 'indices' in events:
             self._updating = True
             try:
@@ -1196,7 +1265,7 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
 
     _scripts = {}
 
-    _script_assignment = r'data.([^[^\d\W]\w*)[ ]*[\+,\-,\*,\\,%,\*\*,<<,>>,>>>,&,\^,|,\&\&,\|\|,\?\?]*='
+    _script_assignment = r'data\.([^[^\d\W]\w*)[ ]*[\+,\-,\*,\\,%,\*\*,<<,>>,>>>,&,\^,|,\&\&,\|\|,\?\?]*='
 
     __abstract = True
 
@@ -1261,7 +1330,7 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
             if getattr(self, p) is not None and p != 'name'
         }
         data_params = {}
-        for k, v in self.param.get_param_values():
+        for k, v in self.param.values().items():
             if (
                 (k in ignored and k != 'name') or
                 ((self.param[k].precedence or 0) < 0) or
@@ -1398,7 +1467,7 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
         # Render Jinja template
         template = jinja2.Template(template_string)
         context = {'param': self.param, '__doc__': self.__original_doc__, 'id': id}
-        for parameter, value in self.param.get_param_values():
+        for parameter, value in self.param.values().items():
             context[parameter] = value
             if parameter in self._child_names:
                 context[f'{parameter}_names'] = self._child_names[parameter]
@@ -1455,7 +1524,11 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
             if isinstance(v, DataModel):
                 v.tags.append(f"__ref:{root.ref['id']}")
         model.children = self._get_children(doc, root, model, comm)
-        model.on_event('dom_event', self._process_event)
+
+        if comm:
+            model.on_event('dom_event', self._process_event)
+        else:
+            model.on_event('dom_event', partial(self._server_event, doc))
 
         self._link_props(model.data, self._linked_properties(), doc, root, comm)
         self._models[root.ref['id']] = (model, parent)
