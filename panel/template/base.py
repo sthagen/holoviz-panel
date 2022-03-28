@@ -16,7 +16,6 @@ from bokeh.document.document import Document as _Document
 from bokeh.io import curdoc as _curdoc
 from bokeh.settings import settings as _settings
 from jinja2.environment import Template as _Template
-from six import string_types
 from pyviz_comms import JupyterCommManager as _JupyterCommManager
 
 from ..config import _base_config, config, panel_extension
@@ -59,13 +58,13 @@ class BaseTemplate(param.Parameterized, ServableMixin):
 
     def __init__(self, template=None, items=None, nb_template=None, **params):
         super().__init__(**params)
-        if isinstance(template, string_types):
+        if isinstance(template, str):
             self._code = template
             template = _Template(template)
         else:
             self._code = None
         self.template = template
-        if isinstance(nb_template, string_types):
+        if isinstance(nb_template, str):
             nb_template = _Template(nb_template)
         self.nb_template = nb_template or template
         self._render_items = OrderedDict()
@@ -490,10 +489,13 @@ class BasicTemplate(BaseTemplate):
             params['favicon'] = str(params['favicon'])
         super().__init__(template=template, **params)
         self._js_area = HTML(margin=0, width=0, height=0)
-        if '{{ embed(roots.js_area) }}' in template:
+        if 'embed(roots.js_area)' in template:
             self._render_items['js_area'] = (self._js_area, [])
-        if '{{ embed(roots.actions) }}' in template:
+        if 'embed(roots.actions)' in template:
             self._render_items['actions'] = (self._actions, [])
+        if 'embed(roots.notifications)' in template and config.notifications:
+            self._render_items['notifications'] = (state.notifications, [])
+            self._render_variables['notifications'] = True
         self._update_busy()
         self.main.param.watch(self._update_render_items, ['objects'])
         self.modal.param.watch(self._update_render_items, ['objects'])
@@ -618,7 +620,7 @@ class BasicTemplate(BaseTemplate):
                     if (BUNDLE_DIR / name / basename).is_file():
                         css_files['theme'] = dist_path + f'bundled/{name}/{basename}'
                     else:
-                        with open(theme.base_css, encoding='utf-8') as f:
+                        with open(theme.css, encoding='utf-8') as f:
                             raw_css.append(f.read())
 
         return {

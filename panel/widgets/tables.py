@@ -1,4 +1,5 @@
 import datetime as dt
+import uuid
 
 from functools import partial
 from types import FunctionType, MethodType
@@ -134,20 +135,20 @@ class BaseTable(ReactiveData, Widget):
             col_kwargs = {}
             kind = data.dtype.kind
             if kind == 'i':
-                formatter = NumberFormatter()
+                formatter = NumberFormatter(text_align='right')
                 editor = IntEditor()
             elif kind == 'b':
-                formatter = StringFormatter()
+                formatter = StringFormatter(text_align='center')
                 editor = CheckboxEditor()
             elif kind == 'f':
-                formatter = NumberFormatter(format='0,0.0[00000]')
+                formatter = NumberFormatter(format='0,0.0[00000]', text_align='right')
                 editor = NumberEditor()
             elif isdatetime(data) or kind == 'M':
                 if len(data) and isinstance(data.values[0], dt.date):
                     date_format = '%Y-%m-%d'
                 else:
                     date_format = '%Y-%m-%d %H:%M:%S'
-                formatter = DateFormatter(format=date_format)
+                formatter = DateFormatter(format=date_format, text_align='right')
                 editor = DateEditor()
             else:
                 formatter = StringFormatter()
@@ -157,6 +158,8 @@ class BaseTable(ReactiveData, Widget):
                 formatter.text_align = self.text_align
             elif col in self.text_align:
                 formatter.text_align = self.text_align[col]
+            elif col in self.indexes:
+                formatter.text_align = 'left'
 
             if col in self.editors and not isinstance(self.editors[col], (dict, str)):
                 editor = self.editors[col]
@@ -176,7 +179,7 @@ class BaseTable(ReactiveData, Widget):
 
             if isinstance(self.widths, int):
                 col_kwargs['width'] = self.widths
-            elif str(col) in self.widths:
+            elif str(col) in self.widths and isinstance(self.widths.get(str(col)), int):
                 col_kwargs['width'] = self.widths.get(str(col))
             else:
                 col_kwargs['width'] = 0
@@ -427,6 +430,8 @@ class BaseTable(ReactiveData, Widget):
 
     def _update_column(self, column, array):
         self.value[column] = array
+        if self._processed is not None and self.value is not self._processed:
+            self._processed[column] = array
 
     #----------------------------------------------------------------
     # Public API
@@ -805,6 +810,10 @@ class Tabulator(BaseTable):
     table to provide a full-featured interactive table.
     """
 
+    buttons = param.Dict(default={}, doc="""
+        Dictionary mapping from column name to a HTML element
+        to use as the button icon.""")
+
     expanded = param.List(default=[], doc="""
         List of expanded rows, only applicable if a row_content function
         has been defined.""")
@@ -905,20 +914,31 @@ class Tabulator(BaseTable):
 
     _manual_params = BaseTable._manual_params + _config_params
 
+    _priority_changes = ['data']
+
     _rename = {
         'disabled': 'editable', 'selection': None, 'selectable': 'select_mode',
         'row_content': None
     }
 
     def __init__(self, value=None, **params):
+        import pandas.io.formats.style
+        if isinstance(value, pandas.io.formats.style.Styler):
+            style = value
+            value = value.data
+        else:
+            style = None
         configuration = params.pop('configuration', {})
         self.style = None
         self._computed_styler = None
         self._child_panels = {}
         self._on_edit_callbacks = []
+        self._on_click_callbacks = {}
         super().__init__(value=value, **params)
         self._configuration = configuration
         self.param.watch(self._update_children, self._content_params)
+        if style is not None:
+            self.style._todo = style._todo
 
     def _validate(self, *events):
         super()._validate(*events)
@@ -938,9 +958,21 @@ class Tabulator(BaseTable):
         super()._cleanup(root)
 
     def _process_event(self, event):
-        event.value = self.value[event.column].iloc[event.row]
-        for cb in self._on_edit_callbacks:
-            cb(event)
+        if self.pagination == 'remote':
+            nrows = self.page_size
+            event.row = (self.page-1)*nrows
+        if event.column not in self.buttons:
+            event.value = self._processed[event.column].iloc[event.row]
+        if event.event_name == 'table-edit':
+            if self._old is not None:
+                event.old = self._old[event.column].iloc[event.row]
+            for cb in self._on_edit_callbacks:
+                cb(event)
+        else:
+            for cb in self._on_click_callbacks.get(None, []):
+                cb(event)
+            for cb in self._on_click_callbacks.get(event.column, []):
+                cb(event)
 
     def _get_theme(self, theme, resources=None):
         from ..io.resources import RESOURCE_MODE
@@ -1048,7 +1080,7 @@ class Tabulator(BaseTable):
             if r not in styles:
                 styles[int(r)] = {}
             styles[int(r)][offset+int(c)] = s
-        return styles
+        return {'id': uuid.uuid4().hex, 'data': styles}
 
     def _get_selectable(self):
         if self.value is None or self.selectable_rows is None:
@@ -1097,11 +1129,12 @@ class Tabulator(BaseTable):
 
     def _update_children(self, *events):
         cleanup, reuse = set(), set()
+        page_events = ('page', 'page_size', 'value', 'pagination')
         for event in events:
             if event.name == 'expanded' and len(events) == 1:
                 cleanup = set(event.old) - set(event.new)
                 reuse = set(event.old) & set(event.new)
-            elif (event.name in ('page', 'page_size', 'value', 'pagination') or
+            elif ((event.name in page_events and not self._updating) or
                   (self.pagination == 'remote' and event.name == 'sorters')):
                 self.expanded = []
                 return
@@ -1206,12 +1239,14 @@ class Tabulator(BaseTable):
         if self.pagination != 'remote':
             index = self._processed.index.values
             self.value.loc[index, column] = array
+            self._processed[column] = array
             return
         nrows = self.page_size
         start = (self.page-1)*nrows
         end = start+nrows
         index = self._processed.iloc[start:end].index.values
         self.value[column].loc[index] = array
+        self._processed[column].loc[index] = array
 
     def _update_selection(self, indices):
         if self.pagination != 'remote':
@@ -1238,6 +1273,7 @@ class Tabulator(BaseTable):
             selectable = self.selectable
         props.update({
             'aggregators': self.aggregators,
+            'buttons': self.buttons,
             'expanded': self.expanded,
             'source': source,
             'styles': self._get_style_data(),
@@ -1282,9 +1318,11 @@ class Tabulator(BaseTable):
         )
         self._link_props(model, ['page', 'sorters', 'expanded', 'filters'], doc, root, comm)
         if comm:
-            model.on_event('table-edit', self._process_event)
+            model.on_event('table-edit', self._comm_event)
+            model.on_event('cell-click', self._comm_event)
         else:
             model.on_event('table-edit', partial(self._server_event, doc))
+            model.on_event('cell-click', partial(self._server_event, doc))
         return model
 
     def _update_model(self, events, msg, root, model, doc, comm):
@@ -1404,6 +1442,8 @@ class Tabulator(BaseTable):
                 col_dict['editorParams'] = editor
             if column.field in self.frozen_columns or i in self.frozen_columns:
                 col_dict['frozen'] = True
+            if isinstance(self.widths, dict) and isinstance(self.widths.get(column.field), str):
+                col_dict['width'] = self.widths[column.field]
             col_dict.update(self._get_filter_spec(column))
             if matching_groups:
                 group = matching_groups[0]
@@ -1470,22 +1510,20 @@ class Tabulator(BaseTable):
         button: Button
             The Button that triggers a download.
         """
-        button_kwargs = dict(button_kwargs)
-        if 'name' not in button_kwargs:
-            button_kwargs['name'] = 'Download'
-        button = Button(**button_kwargs)
-        button.js_on_click({'table': self}, code="""
-        table.download = !table.download
-        """)
-
         text_kwargs = dict(text_kwargs)
         if 'name' not in text_kwargs:
             text_kwargs['name'] = 'Filename'
         if 'value' not in text_kwargs:
             text_kwargs['value'] = 'table.csv'
         filename = TextInput(**text_kwargs)
-        filename.jscallback({'table': self}, value="""
-        table.filename = cb_obj.value
+
+        button_kwargs = dict(button_kwargs)
+        if 'name' not in button_kwargs:
+            button_kwargs['name'] = 'Download'
+        button = Button(**button_kwargs)
+        button.js_on_click({'table': self, 'filename': filename}, code="""
+        table.filename = filename.value
+        table.download = !table.download
         """)
         return filename, button
 
@@ -1503,3 +1541,44 @@ class Tabulator(BaseTable):
         """
         self._on_edit_callbacks.append(callback)
 
+    def on_click(self, callback, column=None):
+        """
+        Register a callback to be executed when any cell is clicked.
+        The callback is given a CellClickEvent declaring the column
+        and row of the cell that was clicked.
+
+        Arguments
+        ---------
+        callback: (callable)
+            The callback to run on edit events.
+        column: (str)
+            Optional argument restricting the callback to a specific
+            column.
+        """
+        if column not in self._on_click_callbacks:
+            self._on_click_callbacks[column] = []
+        self._on_click_callbacks[column].append(callback)
+
+    def on_button_click(self, callback, column=None):
+        """
+        Register a callback to be executed when a cell corresponding
+        to a column declared in the `buttons` parameter is clicked.
+        The callback is given a CellClickEvent declaring the column
+        and row of the cell that was clicked.
+
+        Arguments
+        ---------
+        callback: (callable)
+            The callback to run on edit events.
+        column: (str)
+            Optional argument restricting the callback to a specific
+            column.
+        """
+        self.param.warning(
+            "DeprecationWarning: The on_button_click callbacks will be "
+            "removed before the 0.13.0 release, please use the generic "
+            "on_click callback instead."
+        )
+        if column not in self._on_click_callbacks:
+            self._on_click_callbacks[column] = []
+        self._on_click_callbacks[column].append(callback)

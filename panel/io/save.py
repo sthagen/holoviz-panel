@@ -3,8 +3,6 @@ Defines utilities to save panel objects to files as HTML or PNG.
 """
 import io
 
-from six import string_types
-
 import bokeh
 
 from bokeh.document.document import Document
@@ -100,7 +98,7 @@ def save_png(model, filename, resources=CDN, template=None, template_variables=N
         if img.width == 0 or img.height == 0:
             raise ValueError("unable to save an empty image")
 
-        img.save(filename)
+        img.save(filename, format="png")
     except Exception:
         raise
     finally:
@@ -150,7 +148,8 @@ def file_html(models, resources, title=None, template=BASE_TEMPLATE,
 def save(panel, filename, title=None, resources=None, template=None,
          template_variables=None, embed=False, max_states=1000,
          max_opts=3, embed_json=False, json_prefix='', save_path='./',
-         load_path=None, progress=True, embed_states={}, **kwargs):
+         load_path=None, progress=True, embed_states={}, as_png=None,
+         **kwargs):
     """
     Saves Panel objects to file.
 
@@ -186,6 +185,9 @@ def save(panel, filename, title=None, resources=None, template=None,
       Whether to report progress
     embed_states: dict (default={})
       A dictionary specifying the widget values to embed for each widget
+    save_png: boolean (default=None)
+        To save as a .png. If None save_png will be true if filename is
+        string and ends with png.
     """
     from ..pane import PaneBase
     from ..template import BaseTemplate
@@ -193,7 +195,8 @@ def save(panel, filename, title=None, resources=None, template=None,
     if isinstance(panel, PaneBase) and len(panel.layout) > 1:
         panel = panel.layout
 
-    as_png = isinstance(filename, string_types) and filename.endswith('png')
+    if as_png is None:
+        as_png = isinstance(filename, str) and filename.endswith('png')
 
     if isinstance(panel, Document):
         doc = panel
@@ -239,7 +242,7 @@ def save(panel, filename, title=None, resources=None, template=None,
             model, resources=resources, filename=filename, template=template,
             template_variables=template_variables, **kwargs
         )
-    elif isinstance(filename, string_types) and not filename.endswith('.html'):
+    elif isinstance(filename, str) and not filename.endswith('.html'):
         filename = filename + '.html'
 
     kwargs = {}

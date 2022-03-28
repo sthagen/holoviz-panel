@@ -13,12 +13,12 @@ from bokeh.models.widgets import (
     AutocompleteInput as _BkAutocompleteInput, CheckboxGroup as _BkCheckboxGroup,
     CheckboxButtonGroup as _BkCheckboxButtonGroup, MultiSelect as _BkMultiSelect,
     RadioButtonGroup as _BkRadioButtonGroup, RadioGroup as _BkRadioBoxGroup,
-    Select as _BkSelect, MultiChoice as _BkMultiChoice
+    MultiChoice as _BkMultiChoice
 )
 
 from ..layout import Column, VSpacer
-from ..models import SingleSelect as _BkSingleSelect
-from ..util import as_unicode, isIn, indexOf
+from ..models import SingleSelect as _BkSingleSelect, CustomSelect
+from ..util import isIn, indexOf
 from .base import Widget, CompositeWidget
 from .button import _ButtonBase, Button
 from .input import TextInput, TextAreaInput
@@ -32,7 +32,7 @@ class SelectBase(Widget):
 
     @property
     def labels(self):
-        return [as_unicode(o) for o in self.options]
+        return [str(o) for o in self.options]
 
     @property
     def values(self):
@@ -95,7 +95,7 @@ class SingleSelectBase(SelectBase):
 
     @property
     def unicode_values(self):
-        return [as_unicode(v) for v in self.values]
+        return [str(v) for v in self.values]
 
     def _process_property_change(self, msg):
         msg = super()._process_property_change(msg)
@@ -126,35 +126,88 @@ class SingleSelectBase(SelectBase):
 
 class Select(SingleSelectBase):
 
+    disabled_options = param.List(default=[], doc="""
+        Optional list of ``options`` that are disabled, i.e. unusable and
+        un-clickable. If ``options`` is a dictionary the list items must be
+        dictionary values.""")
+
+    groups = param.Dict(default=None, doc="""
+        Dictionary whose keys are used to visually group the options
+        and whose values are either a list or a dictionary of options
+        to select from. Mutually exclusive with ``options``  and valid only
+        if ``size`` is 1.""")
+
     size = param.Integer(default=1, bounds=(1, None), doc="""
         Declares how many options are displayed at the same time.
         If set to 1 displays options as dropdown otherwise displays
         scrollable area.""")
-    
-    groups = param.Dict(default=None, doc="""
-        Dictionary whose keys are used to visually group the options
-        and whose values are either a list or a dictionary of options
-        to select from. Mutually exclusive with ``options``.""")
 
     _source_transforms = {'size': None, 'groups': None}
 
     @property
     def _widget_type(self):
-        return _BkSelect if self.size == 1 else _BkSingleSelect
+        return CustomSelect if self.size == 1 else _BkSingleSelect
 
     def __init__(self, **params):
         super().__init__(**params)
         if self.size == 1:
             self.param.size.constant = True
-        watcher = self.param.watch(self._validate_options_groups, ['options', 'groups'])
-        self._callbacks.append(watcher)
+        self._callbacks.extend([
+            self.param.watch(
+                self._validate_options_groups,
+                ['options', 'groups']
+            ),
+            self.param.watch(
+                self._validate_disabled_options,
+                ['options', 'disabled_options', 'value']
+            ),
+        ])
         self._validate_options_groups()
+        self._validate_disabled_options()
+
+    def _validate_disabled_options(self, *events):
+        if self.disabled_options and self.disabled_options == self.values:
+            raise ValueError(
+                f'All the options of a {type(self).__name__} '
+                'widget cannot be disabled.'
+            )
+        not_in_opts = [
+            dopts
+            for dopts in self.disabled_options
+            if dopts not in (self.values or [])
+        ]
+        if not_in_opts:
+            raise ValueError(
+                f'Cannot disable non existing options of {type(self).__name__}: {not_in_opts}'
+            )
+        if len(events) == 1:
+            if events[0].name == 'value' and self.value in self.disabled_options:
+                raise ValueError(
+                    f'Cannot set the value of {type(self).__name__} to '
+                    f'{self.value!r} as it is a disabled option.'
+                )
+            elif events[0].name == 'disabled_options' and self.value in self.disabled_options:
+                raise ValueError(
+                    f'Cannot set disabled_options of {type(self).__name__} to a list that '
+                    f'includes the current value {self.value!r}.'
+                )
+        if self.value in self.disabled_options:
+            raise ValueError(
+                f'Cannot initialize {type(self).__name__} with value {self.value!r} '
+                'as it is one of the disabled options.'
+            )
+
 
     def _validate_options_groups(self, *events):
         if self.options and self.groups:
             raise ValueError(
                 f'{type(self).__name__} options and groups parameters '
                 'are mutually exclusive.'
+            )
+        if self.size > 1 and self.groups:
+            raise ValueError(
+                f'{type(self).__name__} with size > 1 doe not support the'
+                ' `groups` parameter, use `options` instead.'
             )
 
     def _process_param_change(self, msg):
@@ -175,18 +228,18 @@ class Select(SingleSelectBase):
                 if isinstance(next(iter(self.groups.values())), dict):
                     if unique:
                         options = {
-                            group: [(as_unicode(value), label) for label, value in subd.items()]
+                            group: [(str(value), label) for label, value in subd.items()]
                             for group, subd in groups.items()
                         }
                     else:
                         options = {
-                            group: [as_unicode(v) for v in self.groups[group]]
+                            group: [str(v) for v in self.groups[group]]
                             for group in groups.keys()
                         }
                     msg['options'] = options
                 else:
                     msg['options'] = {
-                        group: [(as_unicode(value), as_unicode(value)) for value in values]
+                        group: [(str(value), str(value)) for value in values]
                         for group, values in groups.items()
                     }
             val = self.value
@@ -205,7 +258,7 @@ class Select(SingleSelectBase):
             if not self.groups:
                 return {}
             else:
-                return list(map(as_unicode, itertools.chain(*self.groups.values())))
+                return list(map(str, itertools.chain(*self.groups.values())))
 
     @property
     def values(self):
@@ -377,6 +430,10 @@ class _RadioGroupBase(SingleSelectBase):
 
 class RadioButtonGroup(_RadioGroupBase, _ButtonBase):
 
+    orientation = param.Selector(default='horizontal',
+        objects=['horizontal', 'vertical'], doc="""
+        Button group orientation, either 'horizontal' (default) or 'vertical'.""")
+
     _widget_type = _BkRadioButtonGroup
 
     _supports_embed = True
@@ -410,7 +467,7 @@ class _CheckGroupBase(SingleSelectBase):
     __abstract = True
 
     def _process_param_change(self, msg):
-        msg = super(SingleSelectBase, self)._process_param_change(msg)
+        msg = super()._process_param_change(msg)
         values = self.values
         if 'active' in msg:
             msg['active'] = [indexOf(v, values) for v in msg['active']
@@ -419,6 +476,8 @@ class _CheckGroupBase(SingleSelectBase):
             msg['labels'] = self.labels
             if any(not isIn(v, values) for v in self.value):
                 self.value = [v for v in self.value if isIn(v, values)]
+            msg["active"] = [indexOf(v, values) for v in self.value
+                             if isIn(v, values)]
         msg.pop('title', None)
         return msg
 
@@ -432,6 +491,10 @@ class _CheckGroupBase(SingleSelectBase):
 
 
 class CheckButtonGroup(_CheckGroupBase, _ButtonBase):
+
+    orientation = param.Selector(default='horizontal',
+        objects=['horizontal', 'vertical'], doc="""
+        Button group orientation, either 'horizontal' (default) or 'vertical'.""")
 
     _widget_type = _BkCheckboxButtonGroup
 

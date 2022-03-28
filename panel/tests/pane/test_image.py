@@ -1,6 +1,4 @@
 import os
-import sys
-import pytest
 
 from base64 import b64decode, b64encode
 from pathlib import Path
@@ -77,7 +75,6 @@ def test_load_from_byteio():
     image_data = image_pane._data()
     assert b'PNG' in image_data
 
-@pytest.mark.skipif(sys.version_info.major <= 2, reason="Doesn't work with python 2")
 def test_load_from_stringio():
     """Testing a loading a image from a StringIO"""
     memory = StringIO()
@@ -92,7 +89,7 @@ def test_load_from_stringio():
 
 def test_loading_a_image_from_url():
     """Tests the loading of a image from a url"""
-    url = 'https://file-examples-com.github.io/uploads/2017/10/file_example_PNG_500kB.png'
+    url = 'https://raw.githubusercontent.com/holoviz/panel/master/doc/_static/logo.png'
 
     image_pane = PNG(url)
     image_data = image_pane._data()
@@ -117,7 +114,7 @@ def test_loading_a_image_from_pathlib():
 
 def test_image_alt_text(document, comm):
     """Tests the loading of a image from a url"""
-    url = 'https://file-examples-com.github.io/uploads/2017/10/file_example_PNG_500kB.png'
+    url = 'https://raw.githubusercontent.com/holoviz/panel/master/doc/_static/logo.png'
 
     image_pane = PNG(url, embed=False, alt_text="Some alt text")
     model = image_pane.get_root(document, comm)
@@ -127,7 +124,7 @@ def test_image_alt_text(document, comm):
 
 def test_image_link_url(document, comm):
     """Tests the loading of a image from a url"""
-    url = 'https://file-examples-com.github.io/uploads/2017/10/file_example_PNG_500kB.png'
+    url = 'https://raw.githubusercontent.com/holoviz/panel/master/doc/_static/logo.png'
 
     image_pane = PNG(url, embed=False, link_url="http://anaconda.org")
     model = image_pane.get_root(document, comm)

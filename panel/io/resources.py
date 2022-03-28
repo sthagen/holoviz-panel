@@ -21,7 +21,9 @@ from bokeh.embed.bundle import (
 
 from bokeh.resources import Resources as BkResources
 from bokeh.settings import settings as _settings
-from jinja2 import Environment, Markup, FileSystemLoader
+from markupsafe import Markup
+from jinja2.environment import Environment
+from jinja2.loaders import FileSystemLoader
 
 from ..util import url_path
 from .state import state
@@ -51,10 +53,21 @@ DIST_DIR = PANEL_DIR / 'dist'
 BUNDLE_DIR = DIST_DIR / 'bundled'
 ASSETS_DIR = PANEL_DIR / 'assets'
 BASE_TEMPLATE = _env.get_template('base.html')
+ERROR_TEMPLATE = _env.get_template('auth_error.html')
 DEFAULT_TITLE = "Panel Application"
 JS_RESOURCES = _env.get_template('js_resources.html')
 CDN_DIST = f"https://unpkg.com/@holoviz/panel@{js_version}/dist/"
 LOCAL_DIST = "static/extensions/panel/"
+
+CSS_URLS = {
+    'font-awesome': 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css',
+    'bootstrap4': 'https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/css/bootstrap.min.css'
+}
+
+JS_URLS = {
+    'jQuery': 'https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js',
+    'bootstrap4': 'https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/js/bootstrap.bundle.min.js'
+}
 
 extension_dirs['panel'] = str(DIST_DIR)
 
@@ -79,7 +92,7 @@ def loading_css():
     return f"""
     .bk.pn-loading.{config.loading_spinner}:before {{
       background-image: url("data:image/svg+xml;base64,{b64}");
-      max-height: {config.loading_max_height}px;
+      background-size: auto calc(min(50%, {config.loading_max_height}px));
     }}
     """
 
@@ -195,7 +208,7 @@ class Resources(BkResources):
         files = super(Resources, self).js_files
 
         for model in param.concrete_descendents(ReactiveHTML).values():
-            if hasattr(model, '__javascript__'):
+            if getattr(model, '__javascript__', None) and model._loaded():
                 for jsfile in model.__javascript__:
                     if jsfile not in files:
                         files.append(jsfile)
@@ -234,7 +247,7 @@ class Resources(BkResources):
         from ..reactive import ReactiveHTML
         modules = list(config.js_modules.values())
         for model in param.concrete_descendents(ReactiveHTML).values():
-            if hasattr(model, '__javascript_modules__'):
+            if hasattr(model, '__javascript_modules__') and model._loaded():
                 for jsmodule in model.__javascript_modules__:
                     if jsmodule not in modules:
                         modules.append(jsmodule)
@@ -248,7 +261,7 @@ class Resources(BkResources):
         files = super(Resources, self).css_files
 
         for model in param.concrete_descendents(ReactiveHTML).values():
-            if hasattr(model, '__css__'):
+            if getattr(model, '__css__', None) and model._loaded():
                 for css_file in model.__css__:
                     if css_file not in files:
                         files.append(css_file)
@@ -285,7 +298,7 @@ class Bundle(BkBundle):
         from ..reactive import ReactiveHTML
         js_modules = list(config.js_modules.values())
         for model in param.concrete_descendents(ReactiveHTML).values():
-            if hasattr(model, '__javascript_modules__'):
+            if getattr(model, '__javascript_modules__', None) and model._loaded():
                 for js_module in model.__javascript_modules__:
                     if js_module not in js_modules:
                         js_modules.append(js_module)

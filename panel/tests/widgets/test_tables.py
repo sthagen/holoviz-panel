@@ -1,9 +1,11 @@
 import datetime as dt
-import pytest
+import time
 
-from distutils.version import LooseVersion
+from packaging.version import Version
 
 import numpy as np
+import pytest
+import requests
 
 try:
     import pandas as pd
@@ -20,12 +22,13 @@ from bokeh.models.widgets.tables import (
 )
 
 from panel.depends import bind
+from panel.io.server import serve
 from panel.models.tabulator import TableEditEvent
 from panel.widgets import Button, TextInput
 from panel.widgets.tables import DataFrame, Tabulator
 
-pd_old = pytest.mark.skipif(LooseVersion(pd.__version__) < '1.3',
-                          reason="Requires latest pandas")
+pd_old = pytest.mark.skipif(Version(pd.__version__) < Version('1.3'),
+                            reason="Requires latest pandas")
 
 
 def test_dataframe_widget(dataframe, document, comm):
@@ -200,7 +203,6 @@ def test_hierarchical_index(document, comm):
     table.aggregators = {'Year': 'min'}
 
     agg1, agg2 = grouping.aggregators
-    print(grouping)
     assert agg1.field_ == 'Int'
     assert isinstance(agg1, MinAggregator)
     assert agg2.field_ == 'Float'
@@ -385,6 +387,21 @@ def test_tabulator_config_defaults(document, comm):
         {'field': 'D'}
     ]
     assert model.configuration['selectable'] == True
+
+def test_tabulator_config_widths_percent(document, comm):
+    df = makeMixedDataFrame()
+    table = Tabulator(df, widths={'A': '22%', 'B': 100})
+
+    model = table.get_root(document, comm)
+
+    assert model.configuration['columns'] == [
+        {'field': 'index'},
+        {'field': 'A', 'width': '22%'},
+        {'field': 'B'},
+        {'field': 'C'},
+        {'field': 'D'}
+    ]
+    assert model.columns[2].width == 100
 
 def test_tabulator_header_filters_config_boolean(document, comm):
     df = makeMixedDataFrame()
@@ -627,7 +644,6 @@ def test_tabulator_pagination_selectable_rows(document, comm):
 
     model = table.get_root(document, comm)
 
-    print(table._processed)
     assert model.selectable_rows == [0, 2]
 
     table.page = 2
@@ -646,7 +662,7 @@ def test_tabulator_styling(document, comm):
 
     model = table.get_root(document, comm)
 
-    assert model.styles == {
+    assert model.styles['data'] == {
         0: {1: [('color', 'black')]},
         1: {1: [('color', 'black')]},
         2: {1: [('color', 'black')]},
@@ -1286,3 +1302,32 @@ def test_tabulator_patch_event():
             event = TableEditEvent(model=None, column=col, row=row)
             table._process_event(event)
             assert values[-1] == (col, row, df[col].iloc[row])
+
+
+def test_server_edit_event():
+    df = makeMixedDataFrame()
+    table = Tabulator(df)
+
+    serve(table, port=7000, threaded=True, show=False)
+
+    time.sleep(0.5)
+
+    requests.get('http://localhost:7000')
+    
+    assert table._models
+    ref, (model, _) = list(table._models.items())[0]
+    doc = list(table._documents.keys())[0]
+
+    events = []
+    table.on_edit(lambda e: events.append(e))
+    
+    new_data = dict(model.source.data)
+    new_data['B'][1] = 3.14
+
+    table._server_change(doc, ref, None, 'data', model.source.data, new_data)
+    table._server_event(doc, TableEditEvent(model, 'B', 1))
+
+    time.sleep(0.1)
+    assert len(events) == 1
+    assert events[0].value == 3.14
+    assert events[0].old == 1

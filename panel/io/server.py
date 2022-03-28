@@ -2,8 +2,8 @@
 Utilities for creating bokeh Server instances.
 """
 import datetime as dt
+import gc
 import html
-import inspect
 import logging
 import os
 import pathlib
@@ -29,31 +29,29 @@ from bokeh.application.handlers.code import CodeHandler, _monkeypatch_io, patch_
 from bokeh.application.handlers.function import FunctionHandler
 from bokeh.command.util import build_single_handler_application
 from bokeh.core.templates import AUTOLOAD_JS
-from bokeh.document.events import ModelChangedEvent
 from bokeh.embed.bundle import Script
 from bokeh.embed.elements import html_page_for_render_items, script_for_render_items
 from bokeh.embed.util import RenderItem
 from bokeh.io import curdoc
 from bokeh.server.server import Server
-from bokeh.server.urls import per_app_patterns, toplevel_patterns
+from bokeh.server.urls import per_app_patterns
 from bokeh.server.views.autoload_js_handler import AutoloadJsHandler as BkAutoloadJsHandler
 from bokeh.server.views.doc_handler import DocHandler as BkDocHandler
-from bokeh.server.views.root_handler import RootHandler as BkRootHandler
 from bokeh.server.views.static_handler import StaticHandler
 
 # Tornado imports
 from tornado.ioloop import IOLoop
-from tornado.websocket import WebSocketHandler
 from tornado.web import RequestHandler, StaticFileHandler, authenticated
 from tornado.wsgi import WSGIContainer
 
 # Internal imports
 from ..util import edit_readonly
+from .document import init_doc, with_lock, unlocked # noqa
 from .logging import LOG_SESSION_CREATED, LOG_SESSION_DESTROYED, LOG_SESSION_LAUNCHING
 from .profile import profile_ctx
 from .reload import autoreload_watcher
 from .resources import BASE_TEMPLATE, Resources, bundle_resources
-from .state import state
+from .state import set_curdoc, state
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +166,28 @@ def autoload_js_script(doc, resources, token, element_id, app_path, absolute_url
 
     return AUTOLOAD_JS.render(bundle=bundle, elementid=element_id)
 
+
+def destroy_document(self, session):
+    """
+    Override for Document.destroy() without calling gc.collect directly.
+    The gc.collect() call is scheduled as a task, ensuring that when
+    multiple documents are destroyed in quick succession we do not
+    schedule excessive garbage collection.
+    """
+    self.remove_on_change(session)
+    del self._roots
+    del self._theme
+    del self._template
+    self._session_context = None
+
+    self.callbacks.destroy()
+    self.models.destroy()
+    self.modules.destroy()
+
+    at = dt.datetime.now() + dt.timedelta(seconds=5)
+    state.schedule_task('gc.collect', gc.collect, at=at)
+
+
 # Patch Application to handle session callbacks
 class Application(BkApplication):
 
@@ -199,7 +219,7 @@ class SessionPrefixHandler:
         # Handle autoload.js absolute paths
         abs_url = self.get_argument('bokeh-absolute-url', default=None)
         if abs_url is not None:
-            app_path = self.get_argument('bokeh-app-path', default=None)
+            app_path = self.get_argument('bokeh-app-path', default='')
             rel_path = abs_url.replace(app_path, '')
 
         with edit_readonly(state):
@@ -271,19 +291,6 @@ class AutoloadJsHandler(BkAutoloadJsHandler, SessionPrefixHandler):
         self.write(js)
 
 per_app_patterns[3] = (r'/autoload.js', AutoloadJsHandler)
-
-class RootHandler(BkRootHandler):
-
-    @authenticated
-    async def get(self, *args, **kwargs):
-        if self.index and not self.index.endswith('.html'):
-            prefix = "" if self.prefix is None else self.prefix
-            redirect_to = prefix + '.'.join(self.index.split('.')[:-1])
-            self.redirect(redirect_to)
-        await super().get(*args, **kwargs)
-
-toplevel_patterns[0] = (r'/?', RootHandler)
-bokeh.server.tornado.RootHandler = RootHandler
 
 def modify_document(self, doc):
     from bokeh.io.doc import set_curdoc as bk_set_curdoc
@@ -365,7 +372,9 @@ def modify_document(self, doc):
 
         def _log_session_destroyed(session_context):
             logger.info(LOG_SESSION_DESTROYED, id(doc))
+
         doc.on_session_destroyed(_log_session_destroyed)
+        doc.destroy = partial(destroy_document, doc)
     finally:
         state._launching.remove(doc)
         if config.profiler:
@@ -395,100 +404,6 @@ bokeh.server.tornado.create_static_handler = create_static_handler
 #---------------------------------------------------------------------
 # Public API
 #---------------------------------------------------------------------
-
-def init_doc(doc):
-    doc = doc or curdoc()
-    if not doc.session_context:
-        return doc
-
-    session_id = doc.session_context.id
-    sessions = state.session_info['sessions']
-    if session_id not in sessions:
-        return doc
-
-    sessions[session_id].update({
-        'started': dt.datetime.now().timestamp()
-    })
-    doc.on_event('document_ready', state._init_session)
-    return doc
-
-@contextmanager
-def set_curdoc(doc):
-    state.curdoc = doc
-    yield
-    state.curdoc = None
-
-def with_lock(func):
-    """
-    Wrap a callback function to execute with a lock allowing the
-    function to modify bokeh models directly.
-
-    Arguments
-    ---------
-    func: callable
-      The callable to wrap
-
-    Returns
-    -------
-    wrapper: callable
-      Function wrapped to execute without a Document lock.
-    """
-    if inspect.iscoroutinefunction(func):
-        @wraps(func)
-        async def wrapper(*args, **kw):
-            return await func(*args, **kw)
-    else:
-        @wraps(func)
-        def wrapper(*args, **kw):
-            return func(*args, **kw)
-    wrapper.lock = True
-    return wrapper
-
-
-@contextmanager
-def unlocked():
-    """
-    Context manager which unlocks a Document and dispatches
-    ModelChangedEvents triggered in the context body to all sockets
-    on current sessions.
-    """
-    curdoc = state.curdoc
-    if curdoc is None or curdoc.session_context is None or curdoc.session_context.session is None:
-        yield
-        return
-    connections = curdoc.session_context.session._subscribed_connections
-
-    hold = curdoc.callbacks.hold_value
-    if hold:
-        old_events = list(curdoc.callbacks._held_events)
-    else:
-        old_events = []
-        curdoc.hold()
-    try:
-        yield
-        events = []
-        for conn in connections:
-            socket = conn._socket
-            if hasattr(socket, 'write_lock') and socket.write_lock._block._value == 0:
-                state._locks.add(socket)
-            locked = socket in state._locks
-            for event in curdoc.callbacks._held_events:
-                if (isinstance(event, ModelChangedEvent) and event not in old_events
-                    and hasattr(socket, 'write_message') and not locked):
-                    msg = conn.protocol.create('PATCH-DOC', [event])
-                    WebSocketHandler.write_message(socket, msg.header_json)
-                    WebSocketHandler.write_message(socket, msg.metadata_json)
-                    WebSocketHandler.write_message(socket, msg.content_json)
-                    for header, payload in msg._buffers:
-                        WebSocketHandler.write_message(socket, header)
-                        WebSocketHandler.write_message(socket, payload, binary=True)
-                elif event not in events:
-                    events.append(event)
-        curdoc.callbacks._held_events = events
-    finally:
-        if not hold:
-            curdoc.unhold()
-
 
 def serve(panels, port=0, address=None, websocket_origin=None, loop=None,
           show=True, start=True, title=None, verbose=True, location=True,
@@ -697,6 +612,8 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
             if (isinstance(app, str) and (app.endswith(".py") or app.endswith(".ipynb"))
                 and os.path.isfile(app)):
                 apps[slug] = build_single_handler_application(app)
+            elif isinstance(app, Application):
+                apps[slug] = app
             else:
                 handler = FunctionHandler(partial(_eval_panel, app, server_id, title_, location))
                 apps[slug] = Application(handler)
@@ -798,7 +715,10 @@ class StoppableThread(threading.Thread):
             bokeh_server = target(*args, **kwargs)
         finally:
             if isinstance(bokeh_server, Server):
-                bokeh_server.stop()
+                try:
+                    bokeh_server.stop()
+                except Exception:
+                    pass
             if hasattr(self, '_target'):
                 del self._target, self._args, self._kwargs
             else:
