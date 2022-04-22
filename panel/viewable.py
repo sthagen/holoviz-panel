@@ -799,8 +799,9 @@ class Viewable(Renderable, Layoutable, ServableMixin):
           The bokeh document the panel was attached to
         """
         doc = init_doc(doc)
-        title = title or 'Panel Application'
-        doc.title = title
+        if title or doc.title == 'Bokeh Application':
+            title = title or 'Panel Application'
+            doc.title = title
         model = self.get_root(doc)
         if hasattr(doc, 'on_session_destroyed'):
             doc.on_session_destroyed(self._server_destroy)
@@ -850,3 +851,10 @@ class Viewer(param.Parameterized):
 
     def _repr_mimebundle_(self, include=None, exclude=None):
         return self._create_view()._repr_mimebundle_(include, exclude)
+
+
+__all__ = (
+    "Layoutable",
+    "Viewable",
+    "Viewer"
+)

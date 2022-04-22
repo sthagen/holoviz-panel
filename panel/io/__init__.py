@@ -17,9 +17,23 @@ from .notebook import ( # noqa
     load_notebook, push, push_notebook
 )
 
-if 'pyodide' in sys.modules:
+if '_pyodide' in sys.modules:
     from .pyodide import serve
 else:
     from .server import serve # noqa
     if 'django' in sys.modules:
         from . import django # noqa
+
+__all__ = (
+    "PeriodicCallback",
+    "Resources",
+    "ipywidget",
+    "panel_logger"
+    "profile",
+    "push",
+    "push_notebook",
+    "serve",
+    "state",
+    "unlocked",
+    "with_lock"
+)

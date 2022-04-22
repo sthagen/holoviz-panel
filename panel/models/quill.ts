@@ -25,11 +25,16 @@ export class QuillInputView extends PanelHTMLBoxView {
       if (this._editing)
         return
       this._editing = true
+      this.quill.enable(false)
       this.quill.setContents([])
       this.quill.clipboard.dangerouslyPasteHTML(this.model.text)
+      this.quill.enable(!this.model.disabled)
       this._editing = false
     })
-    const {mode, toolbar} = this.model.properties
+    const {mode, toolbar, placeholder} = this.model.properties
+    this.on_change([placeholder], () => {
+      this.quill.root.setAttribute('data-placeholder', this.model.placeholder)
+    })
     this.on_change([mode, toolbar], () => {
       this.render()
       this._layout_toolbar()
@@ -54,6 +59,7 @@ export class QuillInputView extends PanelHTMLBoxView {
       modules: {
         toolbar: this.model.toolbar
       },
+      readOnly: true,
       placeholder: this.model.placeholder,
       theme: theme
     });
@@ -67,6 +73,8 @@ export class QuillInputView extends PanelHTMLBoxView {
       this.model.text = this._editor.innerHTML
       this._editing = false
     });
+    if (!this.model.disabled)
+      this.quill.enable(!this.model.disabled)
   }
 
   after_layout(): void {
@@ -81,7 +89,6 @@ export namespace QuillInput {
   export type Props = HTMLBox.Props & {
     mode:        p.Property<string>
     placeholder: p.Property<string>
-    readonly:    p.Property<boolean>
     text:        p.Property<string>
     toolbar:     p.Property<any>
   }
@@ -101,10 +108,9 @@ export class QuillInput extends HTMLBox {
   static init_QuillInput(): void {
     this.prototype.default_view = QuillInputView
 
-    this.define<QuillInput.Props>(({Any, Boolean, String}) => ({
+    this.define<QuillInput.Props>(({Any, String}) => ({
       mode:         [ String, 'toolbar' ],
       placeholder:  [ String,        '' ],
-      readonly:     [ Boolean,    false ],
       text:         [ String,        '' ],
       toolbar:      [ Any,         null ],
     }))

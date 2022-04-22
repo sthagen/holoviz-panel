@@ -468,6 +468,12 @@ class panel_extension(_pyviz_extension):
         }
         for arg in args:
             if arg in self._imports:
+                try:
+                    if (arg == 'ipywidgets' and get_ipython() and # noqa (get_ipython)
+                        not "PANEL_IPYWIDGET" in os.environ):
+                        continue
+                except Exception:
+                    pass
                 __import__(self._imports[arg])
             elif arg in reactive_exts:
                 ReactiveHTMLMetaclass._loaded_extensions.add(arg)
@@ -644,3 +650,5 @@ def _cleanup_server(server_id):
 panel_extension.add_delete_action(_cleanup_panel)
 if hasattr(panel_extension, 'add_server_delete_action'):
     panel_extension.add_server_delete_action(_cleanup_server)
+
+__all__ = ['config', 'panel_extension']

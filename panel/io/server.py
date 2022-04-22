@@ -1,9 +1,11 @@
 """
 Utilities for creating bokeh Server instances.
 """
+import asyncio
 import datetime as dt
 import gc
 import html
+import importlib
 import logging
 import os
 import pathlib
@@ -12,6 +14,7 @@ import sys
 import traceback
 import threading
 import uuid
+import warnings
 
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -22,6 +25,7 @@ from urllib.parse import urljoin, urlparse
 import param
 import bokeh
 import bokeh.command.util
+import tornado
 
 # Bokeh imports
 from bokeh.application import Application as BkApplication
@@ -41,16 +45,18 @@ from bokeh.server.views.static_handler import StaticHandler
 
 # Tornado imports
 from tornado.ioloop import IOLoop
-from tornado.web import RequestHandler, StaticFileHandler, authenticated
+from tornado.web import HTTPError, RequestHandler, StaticFileHandler, authenticated
 from tornado.wsgi import WSGIContainer
 
 # Internal imports
-from ..util import edit_readonly
+from ..util import edit_readonly, fullpath
 from .document import init_doc, with_lock, unlocked # noqa
 from .logging import LOG_SESSION_CREATED, LOG_SESSION_DESTROYED, LOG_SESSION_LAUNCHING
 from .profile import profile_ctx
 from .reload import autoreload_watcher
-from .resources import BASE_TEMPLATE, Resources, bundle_resources
+from .resources import (
+    BASE_TEMPLATE, COMPONENT_PATH, Resources, bundle_resources, component_rel_path
+)
 from .state import set_curdoc, state
 
 logger = logging.getLogger(__name__)
@@ -292,6 +298,90 @@ class AutoloadJsHandler(BkAutoloadJsHandler, SessionPrefixHandler):
 
 per_app_patterns[3] = (r'/autoload.js', AutoloadJsHandler)
 
+
+class ComponentResourceHandler(StaticFileHandler):
+    """
+    A handler that serves local resources relative to a Python module.
+    The handler resolves a specific Panel component by module reference
+    and name, then resolves an attribute on that component to check
+    if it contains the requested resource path.
+
+    /<endpoint>/<module>/<class>/<attribute>/<path>
+    """
+
+    _resource_attrs = [
+        '__css__', '__javascript__', '__js_module__',  '_resources',
+        '_css', '_js', 'base_css', 'css'
+    ]
+
+    def initialize(self, path=None, default_filename=None):
+        self.root = path
+        self.default_filename = default_filename
+
+    def parse_url_path(self, path):
+        """
+        Resolves the resource the URL pattern refers to.
+        """
+        parts = path.split('/')
+        if len(parts) < 4:
+            raise HTTPError(400, 'Malformed URL')
+        module, cls, rtype, *subpath = parts
+        try:
+            module = importlib.import_module(module)
+        except ModuleNotFoundError:
+            raise HTTPError(404, 'Module not found')
+        try:
+            component = getattr(module, cls)
+        except AttributeError:
+            raise HTTPError(404, 'Component not found')
+
+        # May only access resources listed in specific attributes
+        if rtype not in self._resource_attrs:
+            raise HTTPError(403, 'Requested resource type not valid.')
+
+        try:
+            resources = getattr(component, rtype)
+        except AttributeError:
+            raise HTTPError(404, 'Resource type not found')
+
+        # Handle template resources
+        if rtype == '_resources':
+            rtype = subpath[0]
+            subpath = subpath[1:]
+            if rtype not in resources:
+                raise HTTPError(404, 'Resource type not found')
+            resources = resources[rtype]
+            rtype = f'_resources/{rtype}'
+
+        if isinstance(resources, dict):
+            resources = list(resources.values())
+        elif isinstance(resources, (str, pathlib.PurePath)):
+            resources = [resources]
+        resources = [
+            component_rel_path(component, resource).replace(os.path.sep, '/')
+            for resource in resources
+        ]
+
+        rel_path = '/'.join(subpath)
+
+        # Important: May only access resources explicitly listed on the component
+        # Otherwise this potentially exposes all files to the web
+        if rel_path not in resources:
+            raise HTTPError(403, 'Requested resource was not listed.')
+
+        return pathlib.Path(module.__file__).parent / rel_path
+
+    def get_absolute_path(self, root, path):
+        return path
+
+    def validate_absolute_path(self, root, absolute_path):
+        if not os.path.exists(absolute_path):
+            raise HTTPError(404)
+        if not os.path.isfile(absolute_path):
+            raise HTTPError(403, "%s is not a file", self.path)
+        return absolute_path
+
+
 def modify_document(self, doc):
     from bokeh.io.doc import set_curdoc as bk_set_curdoc
     from ..config import config
@@ -401,6 +491,16 @@ def create_static_handler(prefix, key, app):
 
 bokeh.server.tornado.create_static_handler = create_static_handler
 
+# Bokeh 2.4.x patches the asyncio event loop policy but Tornado 6.1
+# support the WindowsProactorEventLoopPolicy so we restore it.
+if (
+    sys.platform == 'win32' and
+    sys.version_info[:3] >= (3, 8, 0) and
+    tornado.version_info >= (6, 1) and
+    type(asyncio.get_event_loop_policy()) is asyncio.WindowsSelectorEventLoopPolicy
+):
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 #---------------------------------------------------------------------
 # Public API
 #---------------------------------------------------------------------
@@ -499,12 +599,15 @@ def get_static_routes(static_dirs):
         if slug == '/static':
             raise ValueError("Static file route may not use /static "
                              "this is reserved for internal use.")
-        path = os.path.abspath(path)
+        path = fullpath(path)
         if not os.path.isdir(path):
             raise ValueError("Cannot serve non-existent path %s" % path)
         patterns.append(
             (r"%s/(.*)" % slug, StaticFileHandler, {"path": path})
         )
+    patterns.append((
+        f'/{COMPONENT_PATH}(.*)', ComponentResourceHandler, {}
+    ))
     return patterns
 
 
@@ -650,11 +753,10 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
 
     # Configure OAuth
     from ..config import config
-    if config.oauth_provider:
-        from ..auth import OAuthProvider
-        opts['auth_provider'] = OAuthProvider()
     if oauth_provider:
+        from ..auth import OAuthProvider
         config.oauth_provider = oauth_provider
+        opts['auth_provider'] = OAuthProvider()
     if oauth_key:
         config.oauth_key = oauth_key
     if oauth_extra_params:
@@ -693,6 +795,11 @@ def get_server(panel, port=0, address=None, websocket_origin=None,
             server.io_loop.start()
         except RuntimeError:
             pass
+        except TypeError:
+            warnings.warn(
+                "IOLoop couldn't be started. Ensure it is started by "
+                "process invoking the panel.io.server.serve."
+            )
     return server
 
 

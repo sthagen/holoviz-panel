@@ -104,7 +104,8 @@ install_requires = [
     'requests',
     'tqdm >=4.48.0',
     'pyct >=0.4.4',
-    'bleach'
+    'bleach',
+    'setuptools',
 ]
 
 _recommended = [
@@ -149,13 +150,14 @@ extras_require = {
         'ipywidgets_bokeh',
         'ipyvolume',
         'ipyleaflet',
+        'ipympl',
+        'folium',
         'xarray',
         'pyinstrument >=4.0',
         'aiohttp',
         'croniter',
         'graphviz',
-        'python-graphviz',
-        'networkx>=2.5',
+        'networkx >=2.5',
         'pygraphviz'
     ],
     'tests': _tests,
@@ -164,6 +166,7 @@ extras_require = {
         'nbsite >=0.7.1',
         'graphviz',
         'lxml',
+        'python-graphviz',
         'pydata-sphinx-theme',
         'sphinx-copybutton',
         'pydeck',
@@ -180,7 +183,7 @@ extras_require['all'] = sorted(set(sum(extras_require.values(), [])))
 extras_require['build'] = [
     'param >=1.9.2',
     'pyct >=0.4.4',
-    'setuptools >=42,<61',
+    'setuptools >=42',
     'bokeh >=2.0.0',
     'pyviz_comms >=0.6.0',
     'bleach',
@@ -211,8 +214,8 @@ setup_args = dict(
     data_files=[
         # like `jupyter serverextension enable --sys-prefix`
         (
-            "etc/jupyter/jupyter_notebook_config.d",
-            ["jupyter-config/jupyter_notebook_config.d/panel-client-jupyter.json"],
+            "etc/jupyter/jupyter_server_config.d",
+            ["jupyter-config/jupyter_server_config.d/panel-client-jupyter.json"],
         ),
     ],
     classifiers=[

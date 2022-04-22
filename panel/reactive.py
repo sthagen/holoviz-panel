@@ -6,6 +6,7 @@ models rendered on the frontend.
 
 import difflib
 import datetime as dt
+import logging
 import re
 import sys
 import textwrap
@@ -17,9 +18,9 @@ import bleach
 import numpy as np
 import param
 
-from bokeh.models import LayoutDOM
 from bokeh.model import DataModel
 from param.parameterized import ParameterizedMetaclass, Watcher
+from pprint import pformat
 
 from .io.document import unlocked
 from .io.model import hold
@@ -30,6 +31,8 @@ from .models.reactive_html import (
 )
 from .util import edit_readonly, escape, updating
 from .viewable import Layoutable, Renderable, Viewable
+
+log = logging.getLogger('panel.reactive')
 
 LinkWatcher = namedtuple("Watcher", Watcher._fields+('target', 'links', 'transformed', 'bidirectional_watcher'))
 
@@ -213,14 +216,22 @@ class Syncable(Renderable):
             doc.add_next_tick_callback(cb)
 
     def _update_model(self, events, msg, root, model, doc, comm):
-        self._changing[root.ref['id']] = [
+        ref = root.ref['id']
+        self._changing[ref] = attrs = [
             attr for attr, value in msg.items()
             if not model.lookup(attr).property.matches(getattr(model, attr), value)
         ]
         try:
             model.update(**msg)
         finally:
-            del self._changing[root.ref['id']]
+            changing = [
+                attr for attr in self._changing.get(ref, [])
+                if attr not in attrs
+            ]
+            if changing:
+                self._changing[ref] = changing
+            elif ref in self._changing:
+                del self._changing[ref]
 
     def _cleanup(self, root):
         super()._cleanup(root)
@@ -272,8 +283,29 @@ class Syncable(Renderable):
                     obj = getattr(obj, sp)
                 with edit_readonly(obj):
                     obj.param.update(**{p: v})
+        except Exception:
+            if len(events)>1:
+                msg_end = f" changing properties {pformat(events)} \n"
+            elif len(events)==1:
+                msg_end = f" changing property {pformat(events)} \n"
+            else:
+                msg_end = "\n"
+            log.exception(f'Callback failed for object named "{self.name}"{msg_end}')
+            raise
         finally:
             self._log('finished processing events %s', events)
+            with edit_readonly(state):
+                state.busy = busy
+
+    def _process_bokeh_event(self, event):
+        self._log('received bokeh event %s', event)
+        busy = state.busy
+        with edit_readonly(state):
+            state.busy = True
+        try:
+            self._process_event(event)
+        finally:
+            self._log('finished processing bokeh event %s', event)
             with edit_readonly(state):
                 state.busy = busy
 
@@ -286,10 +318,10 @@ class Syncable(Renderable):
 
     async def _event_coroutine(self, event, doc):
         if state._thread_pool:
-            state._thread_pool.submit(self._process_event, event)
+            state._thread_pool.submit(self._process_bokeh_event, event)
         else:
             with set_curdoc(doc):
-                self._process_event(event)
+                self._process_bokeh_event(event)
 
     def _change_event(self, doc=None):
         try:
@@ -319,9 +351,9 @@ class Syncable(Renderable):
 
     def _comm_event(self, event):
         if state._thread_pool:
-            state._thread_pool.submit(self._process_event, event)
+            state._thread_pool.submit(self._process_bokeh_event, event)
         else:
-            self._process_event(event)
+            self._process_bokeh_event(event)
 
     def _server_event(self, doc, event):
         if doc.session_context and not state._unblocked(doc):
@@ -561,55 +593,11 @@ class Reactive(Syncable, Viewable):
         if args is None:
             args = {}
 
+        from .links import Link, assert_source_syncable, assert_target_syncable
         mapping = code or links
-        for k in mapping:
-            if k.startswith('event:'):
-                continue
-            elif hasattr(self, 'object') and isinstance(self.object, LayoutDOM):
-                current = self.object
-                for attr in k.split('.'):
-                    if not hasattr(current, attr):
-                        raise ValueError(f"Could not resolve {k} on "
-                                         f"{self.object} model. Ensure "
-                                         "you jslink an attribute that "
-                                         "exists on the bokeh model.")
-                    current = getattr(current, attr)
-            elif (k not in self.param and k not in list(self._rename.values())):
-                matches = difflib.get_close_matches(k, list(self.param))
-                if matches:
-                    matches = ' Similar parameters include: %r' % matches
-                else:
-                    matches = ''
-                raise ValueError("Could not jslink %r parameter (or property) "
-                                 "on %s object because it was not found.%s"
-                                 % (k, type(self).__name__, matches))
-            elif (self._source_transforms.get(k, False) is None or
-                  self._rename.get(k, False) is None):
-                raise ValueError("Cannot jslink %r parameter on %s object, "
-                                 "the parameter requires a live Python kernel "
-                                 "to have an effect." % (k, type(self).__name__))
-
+        assert_source_syncable(self, mapping)
         if isinstance(target, Syncable) and code is None:
-            for k, p in mapping.items():
-                if k.startswith('event:'):
-                    continue
-                elif p not in target.param and p not in list(target._rename.values()):
-                    matches = difflib.get_close_matches(p, list(target.param))
-                    if matches:
-                        matches = ' Similar parameters include: %r' % matches
-                    else:
-                        matches = ''
-                    raise ValueError("Could not jslink %r parameter (or property) "
-                                     "on %s object because it was not found.%s"
-                                    % (p, type(self).__name__, matches))
-                elif (target._source_transforms.get(p, False) is None or
-                      target._rename.get(p, False) is None):
-                    raise ValueError("Cannot jslink %r parameter on %s object "
-                                     "to %r parameter on %s object. It requires "
-                                     "a live Python kernel to have an effect."
-                                     % (k, type(self).__name__, p, type(target).__name__))
-
-        from .links import Link
+            assert_target_syncable(self, target, mapping)
         return Link(self, target, properties=links, code=code, args=args,
                     bidirectional=bidirectional)
 
@@ -1030,10 +1018,10 @@ class ReactiveData(SyncableData):
         self._updating = True
         old_data = getattr(self, self._data_params[0])
         try:
-            if old_raw is self.value:
+            if old_data is self.value:
                 with param.discard_events(self):
                     self.value = old_raw
-                self.value = data
+                self.value = old_data
             else:
                 self.param.trigger('value')
         finally:
@@ -1692,3 +1680,9 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
         events = self._get_events()
         for ref, (model, _) in self._models.items():
             self._apply_update([], {'events': events}, model, ref)
+
+__all__ = (
+    "Reactive",
+    "ReactiveHTML",
+    "ReactiveData"
+)

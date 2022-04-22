@@ -7,6 +7,23 @@ from .card import Card
 
 
 class Accordion(NamedListPanel):
+    """
+    The `Accordion` layout is a type of `Card` layout that allows switching
+    between multiple objects by clicking on the corresponding card header.
+    
+    The labels for each card will default to the `name` parameter of the card’s
+    contents, but may also be defined explicitly as part of a tuple.
+    
+    Like `Column` and `Row`, `Accordion` has a list-like API that allows
+    interactively updating and modifying the cards using the methods `append`,
+    `extend`, `clear`, `insert`, `pop`, `remove` and `__setitem__`.
+
+    Reference: https://panel.holoviz.org/reference/layouts/Accordion.html
+
+    :Example:
+
+    >>> pn.Accordion(some_pane_with_a_name, ("Plot", some_plot))
+    """
     
     active_header_background = param.String(default='#ccc', doc="""
         Color for currently active headers.""")
@@ -73,6 +90,7 @@ class Accordion(NamedListPanel):
 
         ref = root.ref['id']
         current_objects = list(self)
+        self._updating_active = True
         for i, (name, pane) in enumerate(zip(self._names, self)):
             params.update(self._apply_style(i))
             if id(pane) in self._panels:
@@ -97,6 +115,9 @@ class Accordion(NamedListPanel):
                 except RerenderError:
                     return self._get_objects(model, current_objects[:i], doc, root, comm)
             new_models.append(panel)
+
+        self._updating_active = False
+        self._set_active()
         self._update_cards()
         self._update_active()
         return new_models
@@ -120,7 +141,7 @@ class Accordion(NamedListPanel):
             return
         self._updating_active = True
         try:
-            if self.toggle and not events[0].new:
+            if self.toggle and events and not events[0].new:
                 active = [list(self._panels.values()).index(events[0].obj)]
             else:
                 active = []
