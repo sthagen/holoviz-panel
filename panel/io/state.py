@@ -147,11 +147,15 @@ class _state(param.Parameterized):
 
     @property
     def _ioloop(self):
-        if 'pyodide' in sys.modules:
+        if state._is_pyodide:
             return asyncio.get_running_loop()
         else:
             from tornado.ioloop import IOLoop
             return IOLoop.current()
+
+    @property
+    def _is_pyodide(self):
+        return '_pyodide' in sys.modules
 
     @property
     def _thread_id(self):
@@ -672,9 +676,7 @@ class _state(param.Parameterized):
     @property
     def notifications(self):
         from ..config import config
-        if not config.notifications:
-            return None
-        if self.curdoc and self.curdoc not in self._notifications:
+        if config.notifications and self.curdoc and self.curdoc not in self._notifications:
             from .notifications import NotificationArea
             self._notifications[self.curdoc] = notifications = NotificationArea()
             return notifications
