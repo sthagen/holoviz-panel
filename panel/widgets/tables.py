@@ -213,8 +213,8 @@ class BaseTable(ReactiveData, Widget):
             indexes = list(self._processed.index)
             selection = []
             for sel in self.selection:
-                iv = old_processed.index[sel]
                 try:
+                    iv = old_processed.index[sel]
                     idx = indexes.index(iv)
                     selection.append(idx)
                 except Exception:
@@ -1043,7 +1043,7 @@ class Tabulator(BaseTable):
     def _process_event(self, event):
         if self.pagination == 'remote':
             nrows = self.page_size
-            event.row = (self.page-1)*nrows
+            event.row = event.row+(self.page-1)*nrows
         if event.column not in self.buttons:
             if event.column not in self._processed.columns:
                 event.value = self._processed.index[event.row]

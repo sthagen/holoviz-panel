@@ -94,7 +94,8 @@ class PanelHandler(DocHandler):
         pass
 
     async def get(self, path, *args, **kwargs):
-        path = os.path.join(self.application.root_dir, fullpath(path))
+        path_url = path
+        path = os.path.join(self.application.root_dir, path)  # path_on_disk
         if path in _APPS:
             app, context = _APPS[path]
         else:
@@ -105,7 +106,7 @@ class PanelHandler(DocHandler):
                 app = build_lumen(path, argv=None)
             else:
                 app = build_single_handler_application(path)
-            context = ApplicationContext(app, url=path)
+            context = ApplicationContext(app, url=path_url)
             context._loop = tornado.ioloop.IOLoop.current()
             _APPS[path] = (app, context)
 
@@ -136,7 +137,7 @@ class PanelWSHandler(WSHandler):
         pass
 
     async def open(self, path, *args, **kwargs):
-        path = os.path.join(self.application.root_dir, fullpath(path))
+        path = os.path.join(self.application.root_dir, path)
         _, context = _APPS[path]
 
         token = self._token
