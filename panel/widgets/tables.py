@@ -447,7 +447,6 @@ class BaseTable(ReactiveData, Widget):
     def _get_data(self):
         import pandas as pd
         df = self._filter_dataframe(self.value)
-        df = self._sort_df(df)
         if df is None:
             return [], {}
         if isinstance(self.value.index, pd.MultiIndex):
@@ -690,7 +689,8 @@ class BaseTable(ReactiveData, Widget):
         Returns the current view of the table after filtering and
         sorting are applied.
         """
-        return self._processed
+        df = self._processed
+        return self._sort_df(df)
 
     @property
     def selected_dataframe(self):
@@ -698,9 +698,8 @@ class BaseTable(ReactiveData, Widget):
         Returns a DataFrame of the currently selected rows.
         """
         if not self.selection:
-            return self._processed.iloc[:0]
-        return self._processed.iloc[self.selection]
-
+            return self.current_view.iloc[:0]
+        return self.current_view.iloc[self.selection]
 
 
 class DataFrame(BaseTable):
@@ -1046,24 +1045,25 @@ class Tabulator(BaseTable):
         super()._cleanup(root)
 
     def _process_event(self, event):
+        event_col = self._renamed_cols.get(event.column, event.column)
         if self.pagination == 'remote':
             nrows = self.page_size
             event.row = event.row+(self.page-1)*nrows
-        if event.column not in self.buttons:
-            if event.column not in self._processed.columns:
+        if event_col not in self.buttons:
+            if event_col not in self._processed.columns:
                 event.value = self._processed.index[event.row]
             else:
-                event.value = self._processed[event.column].iloc[event.row]
+                event.value = self._processed[event_col].iloc[event.row]
         if event.event_name == 'table-edit':
             if self._old is not None:
-                event.old = self._old[event.column].iloc[event.row]
+                event.old = self._old[event_col].iloc[event.row]
             for cb in self._on_edit_callbacks:
                 cb(event)
             self._update_style()
         else:
             for cb in self._on_click_callbacks.get(None, []):
                 cb(event)
-            for cb in self._on_click_callbacks.get(event.column, []):
+            for cb in self._on_click_callbacks.get(event_col, []):
                 cb(event)
 
     def _get_theme(self, theme, resources=None):
@@ -1379,7 +1379,8 @@ class Tabulator(BaseTable):
             'hidden_columns': self.hidden_columns,
             'editable': not self.disabled,
             'select_mode': selectable,
-            'selectable_rows': self._get_selectable()
+            'selectable_rows': self._get_selectable(),
+            'sorters': self.sorters
         })
         process = {'theme': self.theme, 'frozen_rows': self.frozen_rows}
         props.update(self._process_param_change(process))
@@ -1650,3 +1651,14 @@ class Tabulator(BaseTable):
         if column not in self._on_click_callbacks:
             self._on_click_callbacks[column] = []
         self._on_click_callbacks[column].append(callback)
+
+    @property
+    def current_view(self):
+        """
+        Returns the current view of the table after filtering and
+        sorting are applied.
+        """
+        df = self._processed
+        if self.pagination == 'remote':
+            return df
+        return self._sort_df(df)
