@@ -1060,13 +1060,13 @@ class Tabulator(BaseTable):
             if self._old is not None:
                 event.old = self._old[event_col].iloc[event.row]
             for cb in self._on_edit_callbacks:
-                cb(event)
+                state.execute(partial(cb, event))
             self._update_style()
         else:
             for cb in self._on_click_callbacks.get(None, []):
-                cb(event)
+                state.execute(partial(cb, event))
             for cb in self._on_click_callbacks.get(event_col, []):
-                cb(event)
+                state.execute(partial(cb, event))
 
     def _get_theme(self, theme, resources=None):
         from ..io.resources import RESOURCE_MODE
@@ -1152,7 +1152,7 @@ class Tabulator(BaseTable):
             styler = self._computed_styler
         if styler is None:
             return {}
-        offset = len(self.indexes) + int(self.selectable in ('checkbox', 'checkbox-single')) + int(bool(self.row_content))
+        offset = 1 + len(self.indexes) + int(self.selectable in ('checkbox', 'checkbox-single')) + int(bool(self.row_content))
         if self.pagination == 'remote':
             start = (self.page-1)*self.page_size
             end = start + self.page_size
