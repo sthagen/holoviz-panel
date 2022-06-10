@@ -2,13 +2,18 @@
 The Debugger Widget is an uneditable Card that gives you feedback on errors
 thrown by your Panel callbacks.
 """
+from __future__ import annotations
+
 import logging
+
+from typing import (
+    ClassVar, Dict, List, Mapping,
+)
 
 import param
 
 from ..io.state import state
-from ..layout import HSpacer, Row
-from ..layout.card import Card
+from ..layout import Card, HSpacer, Row
 from ..reactive import ReactiveHTML
 from .terminal import Terminal
 
@@ -36,7 +41,6 @@ class TermFormatter(logging.Formatter):
         self.only_last = only_last
 
     def format(self, record):
-
         record.message = record.getMessage()
         if self.usesTime():
             record.asctime = self.formatTime(record, self.datefmt)
@@ -115,7 +119,7 @@ class DebuggerButtons(ReactiveHTML):
 
     clears = param.Integer(default=0)
 
-    _template = """
+    _template: ClassVar[str] = """
     <div class="bk" style="display: flex;">
       <button class='special_btn clear_btn'
          id="clear_btn"
@@ -133,7 +137,7 @@ class DebuggerButtons(ReactiveHTML):
     </div>
     """
 
-    js_cb = """
+    js_cb: ClassVar[str] = """
         var filename = data.debug_name+'.txt'
         console.log('saving debugger terminal output to '+filename)
         var blob = new Blob([data.terminal_output],
@@ -154,12 +158,12 @@ class DebuggerButtons(ReactiveHTML):
         }
         """
 
-    _scripts = {
+    _scripts: ClassVar[Dict[str, str | List[str]]] = {
         'click': js_cb,
         'click_clear': "data.clears += 1"
     }
 
-    _dom_events = {'clear_btn': ['click']}
+    _dom_events: ClassVar[Dict[str, List[str]]] = {'clear_btn': ['click']}
 
 
 class Debugger(Card):
@@ -202,9 +206,8 @@ class Debugger(Card):
         Loggers which will be prompted in the debugger terminal."""
     )
 
-    _rename = Card._rename.copy()
-
-    _rename.update({
+    _rename: ClassVar[Mapping[str, str | None]] = dict(
+        Card._rename, **{
         '_number_of_errors': None,
         '_number_of_warnings': None,
         '_number_of_infos': None,

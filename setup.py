@@ -134,6 +134,11 @@ _tests = [
     'holoviews'
 ]
 
+_ui = [
+    'playwright',
+    'pytest-playwright'
+]
+
 extras_require = {
     'examples': [
         'hvplot',
@@ -171,8 +176,10 @@ extras_require = {
         'python-graphviz',
         'pydata-sphinx-theme',
         'sphinx-copybutton',
+        'sphinx-design',
         'pydeck',
-    ]
+    ],
+    'ui': _ui
 }
 
 extras_require['all'] = sorted(set(sum(extras_require.values(), [])))

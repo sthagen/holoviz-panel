@@ -15,11 +15,16 @@ How to use indicators
 ...    colors=[(80, 'green'), (100, 'red')]
 ... )
 """
+from __future__ import annotations
+
 import math
 import os
 import sys
 
 from math import pi
+from typing import (
+    TYPE_CHECKING, ClassVar, Dict, List, Mapping, Optional, Type,
+)
 
 import numpy as np
 import param
@@ -28,7 +33,7 @@ from bokeh.models import ColumnDataSource, FixedTicker
 from bokeh.plotting import figure
 from tqdm.asyncio import tqdm as _tqdm
 
-from ..layout import Column, Row
+from ..layout import Column, Panel, Row
 from ..models import (
     HTML, Progress as _BkProgress, TrendIndicator as _BkTrendIndicator,
 )
@@ -37,6 +42,11 @@ from ..reactive import SyncableData
 from ..util import escape, updating
 from ..viewable import Viewable
 from .base import Widget
+
+if TYPE_CHECKING:
+    from bokeh.document import Document
+    from bokeh.model import Model
+    from pyviz_comms import Comm
 
 RED   = "#d9534f"
 GREEN = "#5cb85c"
@@ -59,6 +69,11 @@ class Indicator(Widget):
 
 
 class BooleanIndicator(Indicator):
+    """
+    BooleanIndicator is an abstract baseclass for indicators that
+    visually indicate a boolean value.
+    """
+
     value = param.Boolean(default=False, doc="""
         Whether the indicator is active or not.""")
 
@@ -94,11 +109,11 @@ class BooleanStatus(BooleanIndicator):
     value = param.Boolean(default=False, doc="""
         Whether the indicator is active or not.""")
 
-    _rename = {}
+    _rename: ClassVar[Mapping[str, str | None]] = {}
 
-    _source_transforms = {'value': None, 'color': None}
+    _source_transforms: ClassVar[Mapping[str, str | None]] = {'value': None, 'color': None}
 
-    _widget_type = HTML
+    _widget_type: ClassVar[Type[Model]] = HTML
 
     def _process_param_change(self, msg):
         msg = super()._process_param_change(msg)
@@ -140,11 +155,11 @@ class LoadingSpinner(BooleanIndicator):
     value = param.Boolean(default=False, doc="""
         Whether the indicator is active or not.""")
 
-    _rename = {}
+    _rename: ClassVar[Mapping[str, str | None]] = {}
 
-    _source_transforms = {'value': None, 'color': None, 'bgcolor': None}
+    _source_transforms: ClassVar[Mapping[str, str | None]] = {'value': None, 'color': None, 'bgcolor': None}
 
-    _widget_type = HTML
+    _widget_type: ClassVar[Type[Model]] = HTML
 
     def _process_param_change(self, msg):
         msg = super()._process_param_change(msg)
@@ -201,9 +216,9 @@ class Progress(ValueIndicator):
         bar will be indeterminate and animate depending on the active
         parameter.""")
 
-    _rename = {'name': None}
+    _rename: ClassVar[Mapping[str, str | None]] = {'name': None}
 
-    _widget_type = _BkProgress
+    _widget_type: ClassVar[Type[Model]] = _BkProgress
 
     @param.depends('max', watch=True)
     def _update_value_bounds(self):
@@ -245,15 +260,15 @@ class Number(ValueIndicator):
     title_size = param.String(default='18pt', doc="""
         The size of the title given by the name.""")
 
-    _rename = {}
+    _rename: ClassVar[Mapping[str, str | None]] = {}
 
-    _source_transforms = {
+    _source_transforms: ClassVar[Mapping[str, str | None]] = {
         'value': None, 'colors': None, 'default_color': None,
         'font_size': None, 'format': None, 'nan_format': None,
         'title_size': None
     }
 
-    _widget_type = HTML
+    _widget_type: ClassVar[Type[Model]] = HTML
 
     def _process_param_change(self, msg):
         msg = super()._process_param_change(msg)
@@ -296,13 +311,13 @@ class String(ValueIndicator):
     value = param.String(default=None, allow_None=True, doc="""
         The string to display""")
 
-    _rename = {}
+    _rename: ClassVar[Mapping[str, str | None]] = {}
 
-    _source_transforms = {
+    _source_transforms: ClassVar[Mapping[str, str | None]] = {
         'value': None, 'default_color': None, 'font_size': None, 'title_size': None
     }
 
-    _widget_type = HTML
+    _widget_type: ClassVar[Type[Model]] = HTML
 
     def _process_param_change(self, msg):
         msg = super()._process_param_change(msg)
@@ -376,9 +391,9 @@ class Gauge(ValueIndicator):
 
     width = param.Integer(default=300, bounds=(0, None))
 
-    _rename = {}
+    _rename: ClassVar[Mapping[str, str | None]] = {}
 
-    _source_transforms = {
+    _source_transforms: ClassVar[Mapping[str, str | None]] = {
         'annulus_width': None, 'bounds': None, 'colors': None,
         'custom_opts': None, 'end_angle': None, 'format': None,
         'num_splits': None, 'show_ticks': None, 'show_labels': None,
@@ -508,7 +523,7 @@ class Dial(ValueIndicator):
 
     width = param.Integer(default=250, bounds=(1, None))
 
-    _manual_params = [
+    _manual_params: ClassVar[List[str]] = [
         'value', 'start_angle', 'end_angle', 'bounds',
         'annulus_width', 'format', 'background', 'needle_width',
         'tick_size', 'title_size', 'value_size', 'colors',
@@ -516,9 +531,9 @@ class Dial(ValueIndicator):
         'width', 'nan_format', 'needle_color'
     ]
 
-    _data_params = _manual_params
+    _data_params: ClassVar[List[str]] = _manual_params
 
-    _rename = {'background': 'background_fill_color'}
+    _rename: ClassVar[Mapping[str, str | None]] = {'background': 'background_fill_color'}
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -745,7 +760,7 @@ class LinearGauge(ValueIndicator):
 
     _rerender_params = ['horizontal']
 
-    _rename = {
+    _rename: ClassVar[Mapping[str, str | None]] = {
         'background': 'background_fill_color', 'show_boundaries': None,
         'default_color': None
     }
@@ -1003,13 +1018,13 @@ class Trend(SyncableData, Indicator):
     value_change = param.Parameter(default='auto', doc="""
       A secondary value. For example the change in percent.""")
 
-    _data_params = ['data']
+    _data_params: ClassVar[List[str]] = ['data']
 
-    _manual_params = ['data']
+    _manual_params: ClassVar[List[str]] = ['data']
 
-    _rename = {'data': None, 'selection': None}
+    _rename: ClassVar[Mapping[str, str | None]] = {'data': None, 'selection': None}
 
-    _widget_type = _BkTrendIndicator
+    _widget_type: ClassVar[Type[Model]] = _BkTrendIndicator
 
     def _get_data(self):
         if self.data is None:
@@ -1145,9 +1160,11 @@ class Tqdm(Indicator):
     write_to_console = param.Boolean(default=False, doc="""
         Whether or not to also write to the console.""")
 
-    _layouts = {Row: 'row', Column: 'column'}
+    _layouts: ClassVar[Dict[Type[Panel], str]] = {Row: 'row', Column: 'column'}
 
-    _rename = {'value': None, 'min': None, 'max': None, 'text': None}
+    _rename: ClassVar[Mapping[str, str | None]] = {
+        'value': None, 'min': None, 'max': None, 'text': None
+    }
 
     def __init__(self, **params):
         layout = params.pop('layout', 'column')
@@ -1183,14 +1200,17 @@ class Tqdm(Indicator):
         self.progress.value = self.value
         self.text_pane.object = self.text
 
-    def _get_model(self, doc, root=None, parent=None, comm=None):
+    def _get_model(
+        self, doc: Document, root: Optional[Model] = None,
+        parent: Optional[Model] = None, comm: Optional[Comm] = None
+    ) -> Model:
         model = self.layout._get_model(doc, root, parent, comm)
         if root is None:
             root = model
         self._models[root.ref['id']] = (model, parent)
         return model
 
-    def _cleanup(self, root):
+    def _cleanup(self, root: Model | None = None) -> None:
         super()._cleanup(root)
         self.layout._cleanup(root)
 

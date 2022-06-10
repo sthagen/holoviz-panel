@@ -2,7 +2,11 @@
 Renders objects representing equations including LaTeX strings and
 SymPy objects.
 """
+from __future__ import annotations
+
 import sys
+
+from typing import Any, ClassVar, Mapping
 
 import param
 
@@ -45,12 +49,12 @@ class LaTeX(DivPaneBase):
         The JS renderer used to render the LaTeX expression.""")
 
     # Priority is dependent on the data type
-    priority = None
+    priority: ClassVar[float | bool | None] = None
 
-    _rename = {"renderer": None}
+    _rename: ClassVar[Mapping[str, str | None]] = {"renderer": None}
 
     @classmethod
-    def applies(cls, obj):
+    def applies(cls, obj: Any) -> float | bool | None:
         if is_sympy_expr(obj) or hasattr(obj, '_repr_latex_'):
             return 0.05
         elif isinstance(obj, str):

@@ -7,7 +7,7 @@ import json
 import urllib.parse as urlparse
 
 from typing import (
-    TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional,
+    TYPE_CHECKING, Any, Callable, ClassVar, Dict, List, Mapping, Optional,
 )
 
 import param
@@ -58,7 +58,7 @@ class Location(Syncable):
         should be set to False""")
 
     # Mapping from parameter name to bokeh model property name
-    _rename = {"name": None}
+    _rename: ClassVar[Mapping[str, str | None]] = {"name": None}
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -79,7 +79,8 @@ class Location(Syncable):
         return model
 
     def get_root(
-        self, doc: Optional[Document] = None, comm: Optional[Comm] = None, preprocess: bool = True
+        self, doc: Optional[Document] = None, comm: Optional[Comm] = None,
+        preprocess: bool = True
     ) -> 'Model':
         doc = init_doc(doc)
         root = self._get_model(doc, comm=comm)
@@ -88,7 +89,7 @@ class Location(Syncable):
         self._documents[doc] = root
         return root
 
-    def _cleanup(self, root: Optional['Model']) -> None:
+    def _cleanup(self, root: Model | None = None) -> None:
         if root:
             if root.document in self._documents:
                 del self._documents[root.document]

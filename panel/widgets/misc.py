@@ -1,9 +1,14 @@
 """
 Miscellaneous widgets which do not fit into the other main categories.
 """
+from __future__ import annotations
+
 import os
 
 from base64 import b64encode
+from typing import (
+    TYPE_CHECKING, ClassVar, Mapping, Type,
+)
 
 import param
 
@@ -17,6 +22,9 @@ from ..models import (
 from ..util import lazy_load
 from .base import Widget
 from .indicators import Progress  # noqa
+
+if TYPE_CHECKING:
+    from bokeh.model import Model
 
 
 class VideoStream(Widget):
@@ -44,9 +52,9 @@ class VideoStream(Widget):
     value = param.String(default='', doc="""
         A base64 representation of the video stream snapshot.""")
 
-    _widget_type = _BkVideoStream
+    _widget_type: ClassVar[Type[Model]] = _BkVideoStream
 
-    _rename = {'name': None}
+    _rename: ClassVar[Mapping[str, str | None]] = {'name': None}
 
     def snapshot(self):
         """
@@ -127,12 +135,12 @@ class FileDownload(Widget):
         }
     }
 
-    _widget_type = _BkFileDownload
-
-    _rename = {
+    _rename: ClassVar[Mapping[str, str | None]] = {
         'callback': None, 'embed': None, 'file': None,
         '_clicks': 'clicks', 'name': 'title'
     }
+
+    _widget_type: ClassVar[Type[Model]] = _BkFileDownload
 
     def __init__(self, file=None, **params):
         self._default_label = 'label' not in params
@@ -284,7 +292,7 @@ class JSONEditor(Widget):
     value = param.Parameter(default={}, doc="""
         JSON data to be edited.""")
 
-    _rename = {'value': 'data'}
+    _rename: ClassVar[Mapping[str, str | None]] = {'value': 'data'}
 
     def _get_model(self, doc, root=None, parent=None, comm=None):
         if self._widget_type is None:

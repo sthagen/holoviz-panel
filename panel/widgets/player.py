@@ -1,12 +1,21 @@
 """
 Defines Player widgets which offer media-player like controls.
 """
+from __future__ import annotations
+
+from typing import (
+    TYPE_CHECKING, ClassVar, Mapping, Type,
+)
+
 import param
 
 from ..models.widgets import Player as _BkPlayer
 from ..util import indexOf, isIn
 from .base import Widget
 from .select import SelectBase
+
+if TYPE_CHECKING:
+    from bokeh.model import Model
 
 
 class PlayerBase(Widget):
@@ -33,9 +42,9 @@ class PlayerBase(Widget):
 
     width = param.Integer(default=510)
 
-    _widget_type = _BkPlayer
+    _rename: ClassVar[Mapping[str, str | None]] = {'name': None}
 
-    _rename = {'name': None}
+    _widget_type: ClassVar[Type[Model]] = _BkPlayer
 
     __abstract = True
 
@@ -70,7 +79,7 @@ class Player(PlayerBase):
 
     value = param.Integer(default=0, doc="Current player value")
 
-    _supports_embed = True
+    _supports_embed: ClassVar[bool] = True
 
     def __init__(self, **params):
         if 'length' in params:
@@ -112,9 +121,9 @@ class DiscretePlayer(PlayerBase, SelectBase):
 
     value = param.Parameter(doc="Current player value")
 
-    _rename = {'name': None, 'options': None}
+    _rename: ClassVar[Mapping[str, str | None]] = {'name': None, 'options': None}
 
-    _source_transforms = {'value': None}
+    _source_transforms: ClassVar[Mapping[str, str | None]] = {'value': None}
 
     def _process_param_change(self, msg):
         values = self.values

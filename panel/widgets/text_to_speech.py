@@ -7,13 +7,22 @@ See https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis
 The term *utterance* is used throughout the API. It is the smallest
 unit of speech in spoken language analysis.
 """
+from __future__ import annotations
+
 import uuid
+
+from typing import (
+    TYPE_CHECKING, ClassVar, Mapping, Type,
+)
 
 import param
 
 from panel.widgets import Widget
 
 from ..models.text_to_speech import TextToSpeech as _BkTextToSpeech
+
+if TYPE_CHECKING:
+    from bokeh.model import Model
 
 
 class Voice(param.Parameterized):
@@ -214,9 +223,7 @@ class TextToSpeech(Utterance, Widget):
 
     _voices = param.List()
 
-    _widget_type = _BkTextToSpeech
-
-    _rename = {
+    _rename: ClassVar[Mapping[str, str | None]] = {
         "auto_speak": None,
         "lang": None,
         "pitch": None,
@@ -228,6 +235,8 @@ class TextToSpeech(Utterance, Widget):
         "volume": None,
         "_voices": "voices",
     }
+
+    _widget_type: ClassVar[Type[Model]] = _BkTextToSpeech
 
     def _process_param_change(self, msg):
         speak = msg.get('speak') or ('value' in msg and self.auto_speak)

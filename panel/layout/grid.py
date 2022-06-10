@@ -1,10 +1,15 @@
 """
 Layout components to lay out objects in a grid.
 """
+from __future__ import annotations
+
 import math
 
 from collections import OrderedDict, namedtuple
 from functools import partial
+from typing import (
+    TYPE_CHECKING, Any, ClassVar, Dict, Mapping, Optional,
+)
 
 import numpy as np
 import param
@@ -15,6 +20,11 @@ from ..io.model import hold
 from .base import (
     ListPanel, Panel, _col, _row,
 )
+
+if TYPE_CHECKING:
+    from bokeh.document import Document
+    from bokeh.model import Model
+    from pyviz_comms import Comm
 
 
 class GridBox(ListPanel):
@@ -44,7 +54,7 @@ class GridBox(ListPanel):
 
     _bokeh_model = BkGridBox
 
-    _rename = {'objects': 'children', 'nrows': None, 'ncols': None}
+    _rename: ClassVar[Mapping[str, str | None]] = {'objects': 'children', 'nrows': None, 'ncols': None}
 
     _source_transforms = {'scroll': None, 'objects': None}
 
@@ -152,7 +162,10 @@ class GridBox(ListPanel):
         self._link_props(model, self._linked_props, doc, root, comm)
         return model
 
-    def _update_model(self, events, msg, root, model, doc, comm=None):
+    def _update_model(
+        self, events: Dict[str, param.parameterized.Event], msg: Dict[str, Any],
+        root: Model, model: Model, doc: Document, comm: Optional[Comm]
+    ) -> None:
         from ..io import state
 
         msg = dict(msg)
@@ -203,7 +216,7 @@ class GridSpec(Panel):
 
     _source_transforms = {'objects': None, 'mode': None}
 
-    _rename = {'objects': 'children', 'mode': None, 'ncols': None, 'nrows': None}
+    _rename: ClassVar[Mapping[str, str | None]] = {'objects': 'children', 'mode': None, 'ncols': None, 'nrows': None}
 
     _preprocess_params = ['objects']
 
@@ -324,7 +337,7 @@ class GridSpec(Panel):
                     grid[y, x] = {((y0, x0, y1, x1), obj)}
         return grid
 
-    def _cleanup(self, root):
+    def _cleanup(self, root: Model | None = None) -> None:
         super()._cleanup(root)
         for p in self.objects.values():
             p._cleanup(root)
