@@ -1020,7 +1020,8 @@ class Tabulator(BaseTable):
 
     _rename: ClassVar[Mapping[str, str | None]] = {
         'disabled': 'editable', 'selection': None, 'selectable': 'select_mode',
-        'row_content': None
+        'row_content': None, 'row_height': None, 'text_align': None,
+        'embed_content': None, 'header_align': None, 'header_filters': None
     }
 
     # Determines the maximum size limits beyond which (local, remote)
@@ -1455,12 +1456,7 @@ class Tabulator(BaseTable):
             child_panels, doc, root, parent, comm
         )
         self._link_props(model, ['page', 'sorters', 'expanded', 'filters'], doc, root, comm)
-        if comm:
-            model.on_event('table-edit', self._comm_event)
-            model.on_event('cell-click', self._comm_event)
-        else:
-            model.on_event('table-edit', partial(self._server_event, doc))
-            model.on_event('cell-click', partial(self._server_event, doc))
+        self._register_events('cell-click', 'table-edit', model=model, doc=doc, comm=comm)
         return model
 
     def _update_model(

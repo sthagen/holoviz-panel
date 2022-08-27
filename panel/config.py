@@ -99,6 +99,17 @@ class _config(_base_config):
         Whether to set custom Signature which allows tab-completion
         in some IDEs and environments.""")
 
+    authorize_callback = param.Callable(default=None, doc="""
+        Authorization callback that is invoked when authentication
+        is enabled. The callback is given the user information returned
+        by the configured Auth provider and should return True or False
+        depending on whether the user is authorized to access the
+        application.""")
+
+    auth_template = param.Path(default=None, doc="""
+        A jinja2 template rendered when the authorize_callback determines
+        that a user in not authorized to access the application.""")
+
     autoreload = param.Boolean(default=False, doc="""
         Whether to autoreload server when script changes.""")
 
@@ -119,7 +130,7 @@ class _config(_base_config):
         Whether to enable notifications functionality.""")
 
     profiler = param.Selector(default=None, allow_None=True, objects=[
-        'pyinstrument', 'snakeviz'], doc="""
+        'pyinstrument', 'snakeviz', 'memray'], doc="""
         The profiler engine to enable.""")
 
     safe_embed = param.Boolean(default=False, doc="""
@@ -315,16 +326,17 @@ class _config(_base_config):
         else:
             params = []
         session_config = super().__getattribute__('_session_config')
-        if state.curdoc and state.curdoc not in session_config:
-            session_config[state.curdoc] = {}
+        curdoc =state.curdoc
+        if curdoc and curdoc not in session_config:
+            session_config[curdoc] = {}
         if (attr in ('raw_css', 'css_files', 'js_files', 'js_modules') and
-            state.curdoc and attr not in session_config[state.curdoc]):
+            curdoc and attr not in session_config[curdoc]):
             new_obj = copy.copy(super().__getattribute__(attr))
             setattr(self, attr, new_obj)
         if attr in global_params:
             return super().__getattribute__(attr)
-        elif state.curdoc and state.curdoc in session_config and attr in session_config[state.curdoc]:
-            return session_config[state.curdoc][attr]
+        elif curdoc and curdoc in session_config and attr in session_config[curdoc]:
+            return session_config[curdoc][attr]
         elif f'_{attr}' in params and getattr(self, f'_{attr}_') is not None:
             return super().__getattribute__(f'_{attr}_')
         return super().__getattribute__(attr)

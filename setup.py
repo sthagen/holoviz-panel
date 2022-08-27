@@ -11,6 +11,8 @@ from setuptools.command.develop import develop
 from setuptools.command.install import install
 from setuptools.command.sdist import sdist
 
+PANEL_LITE_BUILD = 'PANEL_LITE' in os.environ
+
 
 def get_setup_version(reponame):
     """
@@ -52,7 +54,8 @@ class CustomDevelopCommand(develop):
     """Custom installation for development mode."""
 
     def run(self):
-        _build_paneljs()
+        if not PANEL_LITE_BUILD:
+            _build_paneljs()
         develop.run(self)
 
 
@@ -60,7 +63,8 @@ class CustomInstallCommand(install):
     """Custom installation for install mode."""
 
     def run(self):
-        _build_paneljs()
+        if not PANEL_LITE_BUILD:
+            _build_paneljs()
         install.run(self)
 
 
@@ -68,7 +72,8 @@ class CustomSdistCommand(sdist):
     """Custom installation for sdist mode."""
 
     def run(self):
-        _build_paneljs()
+        if not PANEL_LITE_BUILD:
+            _build_paneljs()
         sdist.run(self)
 
 
@@ -136,6 +141,8 @@ _tests = [
     'ipython >=7.0',
     'holoviews',
     'diskcache',
+    # Temporary pins (jupyter_bokeh needs updates)
+    'ipywidgets <8.0'
 ]
 
 _ui = [
@@ -198,7 +205,7 @@ extras_require['build'] = [
     'param >=1.9.2',
     'pyct >=0.4.4',
     'setuptools >=42',
-    'bokeh >=2.0.0',
+    'bokeh >=2.4.3',
     'pyviz_comms >=0.6.0',
     'bleach',
     'tqdm',
