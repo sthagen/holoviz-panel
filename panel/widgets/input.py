@@ -299,17 +299,13 @@ class _DatetimePickerBase(Widget):
       Enable editing of the seconds in the widget.""")
 
     end = param.Date(default=None, doc="""
-      Inclusive upper bound of the allowed date selection. Note that while
-      the parameter accepts datetimes the time portion of the range
-      is ignored.""")
+      Inclusive upper bound of the allowed date selection.""")
 
     military_time = param.Boolean(default=True, doc="""
       Whether to display time in 24 hour format.""")
 
     start = param.Date(default=None, doc="""
-      Inclusive lower bound of the allowed date selection. Note that while
-      the parameter accepts datetimes the time portion of the range
-      is ignored.""")
+      Inclusive lower bound of the allowed date selection.""")
 
     _source_transforms: ClassVar[Mapping[str, str | None]] = {
         'value': None, 'start': None, 'end': None, 'mode': None
@@ -328,15 +324,17 @@ class _DatetimePickerBase(Widget):
         self._update_value_bounds()
 
     @staticmethod
-    def _date_to_datetime(x):
-        if isinstance(x, date):
-            return datetime(x.year, x.month, x.day)
+    def _convert_to_datetime(v):
+        if isinstance(v, datetime):
+            return v
+        elif isinstance(v, date):
+            return datetime(v.year, v.month, v.day)
 
     @param.depends('start', 'end', watch=True)
     def _update_value_bounds(self):
         self.param.value.bounds = (
-            self._date_to_datetime(self.start),
-            self._date_to_datetime(self.end),
+            self._convert_to_datetime(self.start),
+            self._convert_to_datetime(self.end)
         )
         self.param.value._validate(self.value)
 
@@ -350,6 +348,10 @@ class _DatetimePickerBase(Widget):
         msg = super()._process_param_change(msg)
         if 'value' in msg:
             msg['value'] = self._deserialize_value(msg['value'])
+        if 'min_date' in msg:
+            msg['min_date'] = self._convert_to_datetime(msg['min_date'])
+        if 'max_date' in msg:
+            msg['max_date'] = self._convert_to_datetime(msg['max_date'])
         return msg
 
 
@@ -377,12 +379,6 @@ class DatetimePicker(_DatetimePickerBase):
     def _serialize_value(self, value):
         if isinstance(value, str) and value:
             value = datetime.strptime(value, r'%Y-%m-%d %H:%M:%S')
-
-            # Hour, minute and seconds can be increased after end is reached.
-            # This forces the hours, minute and second to be 0.
-            end = self._date_to_datetime(self.end)
-            if end is not None and value > end:
-                value = end
 
         return value
 
@@ -421,13 +417,6 @@ class DatetimeRangePicker(_DatetimePickerBase):
                 for value in value.split(' to ')
             ]
 
-            # Hour, minute and seconds can be increased after end is reached.
-            # This forces the hours, minute and second to be 0.
-            end = self._date_to_datetime(self.end)
-            if end is not None and value[0] > end:
-                value[0] = end
-            if end is not None and value[1] > end:
-                value[1] = end
 
             value = tuple(value)
 
@@ -535,7 +524,7 @@ class _SpinnerBase(_NumericInputBase):
     __abstract = True
 
     def __init__(self, **params):
-        if params.get('value') is None:
+        if 'value' not in params:
             value = params.get('start', self.value)
             if value is not None:
                 params['value'] = value
@@ -649,6 +638,9 @@ class LiteralInput(Widget):
     >>> LiteralInput(name='Dictionary', value={'key': [1, 2, 3]}, type=dict)
     """
 
+    placeholder = param.String(default='', doc="""
+      Placeholder for empty input field.""")
+
     serializer = param.ObjectSelector(default='ast', objects=['ast', 'json'], doc="""
        The serialization (and deserialization) method to use. 'ast'
        uses ast.literal_eval and 'json' uses json.loads and json.dumps.
@@ -696,7 +688,9 @@ class LiteralInput(Widget):
         if 'value' in msg:
             value = msg.pop('value')
             try:
-                if self.serializer == 'json':
+                if value == '':
+                    value = ''
+                elif self.serializer == 'json':
                     value = json.loads(value)
                 else:
                     value = ast.literal_eval(value)
@@ -714,7 +708,9 @@ class LiteralInput(Widget):
                             pass
                         else:
                             break
-                    if typed_value is None and value is not None:
+                    if typed_value is None and value == '':
+                        value = None
+                    elif typed_value is None and value is not None:
                         new_state = ' (wrong type)'
                         value = self.value
                     else:

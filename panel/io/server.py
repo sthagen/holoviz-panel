@@ -239,7 +239,7 @@ def destroy_document(self, session):
     state.schedule_task('gc.collect', gc.collect, at=at)
 
 
-# Patch Srrver to attach task factory to asyncio loop
+# Patch Server to attach task factory to asyncio loop and handle Admin server context
 class Server(BokehServer):
 
     def __init__(self, *args, **kwargs):
@@ -248,8 +248,21 @@ class Server(BokehServer):
             _add_task_factory(self.io_loop.asyncio_loop) # type: ignore
         except Exception:
             pass
+        if state._admin_context:
+            state._admin_context._loop = self._loop
+
+    def start(self) -> None:
+        super().start()
+        if state._admin_context:
+            self._loop.add_callback(state._admin_context.run_load_hook)
+
+    def stop(self, wait: bool = True) -> None:
+        super().stop(wait=wait)
+        if state._admin_context:
+            state._admin_context.run_unload_hook()
 
 bokeh.server.server.Server = Server
+
 
 # Patch Application to handle session callbacks
 class Application(BkApplication):
@@ -516,11 +529,12 @@ def modify_document(self, doc: 'Document'):
             else:
                 doc._modules.remove(module)
             bokeh.application.handlers.code_runner.handle_exception = handle_exception
-            tb = html.escape(traceback.format_exc())
+            tb = html.escape(traceback.format_exc()).replace('\033[1m', '<b>').replace('\033[0m', '</b>')
 
             # Serve error
+            e_msg = str(e).replace('\033[1m', '<b>').replace('\033[0m', '</b>')
             HTML(
-                f'<b>{type(e).__name__}</b>: {e}</br><pre style="overflow-y: scroll">{tb}</pre>',
+                f'<b>{type(e).__name__}</b>: {e_msg}</br><pre style="overflow-y: scroll">{tb}</pre>',
                 css_classes=['alert', 'alert-danger'], sizing_mode='stretch_width'
             ).servable()
 
@@ -610,11 +624,19 @@ def _add_task_factory(loop):
 #---------------------------------------------------------------------
 
 def serve(
-    panels: 'TViewableOrFunc' | Mapping[str, 'TViewableOrFunc'], port: int = 0,
-    address: Optional[str] = None, websocket_origin: Optional[str | list[str]] = None,
-    loop: Optional[IOLoop] = None, show: bool = True, start: bool = True,
-    title: Optional[str] = None, verbose: bool = True, location: bool = True,
-    threaded: bool = False, **kwargs
+    panels: 'TViewableOrFunc' | Mapping[str, 'TViewableOrFunc'],
+    port: int = 0,
+    address: Optional[str] = None,
+    websocket_origin: Optional[str | list[str]] = None,
+    loop: Optional[IOLoop] = None,
+    show: bool = True,
+    start: bool = True,
+    title: Optional[str] = None,
+    verbose: bool = True,
+    location: bool = True,
+    threaded: bool = False,
+    admin: bool = False,
+    **kwargs
 ) -> threading.Thread | Server:
     """
     Allows serving one or more panel objects on a single server.
@@ -658,13 +680,15 @@ def serve(
       set the URL location.
     threaded: boolean (default=False)
       Whether to start the server on a new Thread
+    admin: boolean (default=False)
+      Whether to enable the admin panel
     kwargs: dict
       Additional keyword arguments to pass to Server instance
     """
     kwargs = dict(kwargs, **dict(
         port=port, address=address, websocket_origin=websocket_origin,
         loop=loop, show=show, start=start, title=title, verbose=verbose,
-        location=location
+        location=location, admin=admin
     ))
     if threaded:
         kwargs['loop'] = loop = IOLoop() if loop is None else loop
@@ -720,14 +744,25 @@ def get_static_routes(static_dirs):
     return patterns
 
 def get_server(
-    panel: 'TViewableOrFunc' | Mapping[str, 'TViewableOrFunc'], port: int = 0,
-    address: Optional[str] = None, websocket_origin: Optional[str | list[str]] = None,
-    loop: Optional[IOLoop] = None, show: bool = False, start: bool = False,
-    title: bool = None, verbose: bool = False, location: bool | Location = True,
-    static_dirs: Mapping[str, str] = {}, oauth_provider: Optional[str] = None,
-    oauth_key: Optional[str] = None, oauth_secret: Optional[str] = None,
-    oauth_extra_params: Mapping[str, str] = {}, cookie_secret: Optional[str] = None,
-    oauth_encryption_key: Optional[str] = None, session_history: Optional[int] = None,
+    panel: 'TViewableOrFunc' | Mapping[str, 'TViewableOrFunc'],
+    port: int = 0,
+    address: Optional[str] = None,
+    websocket_origin: Optional[str | list[str]] = None,
+    loop: Optional[IOLoop] = None,
+    show: bool = False,
+    start: bool = False,
+    title: bool = None,
+    verbose: bool = False,
+    location: bool | Location = True,
+    admin: bool = False,
+    static_dirs: Mapping[str, str] = {},
+    oauth_provider: Optional[str] = None,
+    oauth_key: Optional[str] = None,
+    oauth_secret: Optional[str] = None,
+    oauth_extra_params: Mapping[str, str] = {},
+    cookie_secret: Optional[str] = None,
+    oauth_encryption_key: Optional[str] = None,
+    session_history: Optional[int] = None,
     **kwargs
 ) -> Server:
     """
@@ -764,6 +799,8 @@ def get_server(
     location : boolean or panel.io.location.Location
       Whether to create a Location component to observe and
       set the URL location.
+    admin: boolean (default=False)
+      Whether to enable the admin panel
     static_dirs: dict (optional, default={})
       A dictionary of routes and local paths to serve as static file
       directories on those routes.
@@ -836,6 +873,16 @@ def get_server(
     else:
         handler = FunctionHandler(partial(_eval_panel, panel, server_id, title, location))
         apps = {'/': Application(handler)}
+
+    if admin:
+        if '/admin' in apps:
+            raise ValueError(
+                'Cannot enable admin panel because another app is being served '
+                'on the /admin endpoint'
+            )
+        from .admin import admin_panel
+        admin_handler = FunctionHandler(admin_panel)
+        apps['/admin'] = Application(admin_handler)
 
     extra_patterns += get_static_routes(static_dirs)
 

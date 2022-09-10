@@ -293,13 +293,29 @@ class BaseTable(ReactiveData, Widget):
             return df
         fields = [self._renamed_cols.get(s['field'], s['field']) for s in self.sorters]
         ascending = [s['dir'] == 'asc' for s in self.sorters]
-        rename = 'index' in fields and df.index.name is None
-        if rename:
-            df.index.name = 'index'
-        df_sorted = df.sort_values(fields, ascending=ascending)
+
+        # Temporarily add _index_ column because Tabulator uses internal _index
+        # as additional sorter to break ties
+        df['_index_'] = np.arange(len(df)).astype(str)
+        fields.append('_index_')
+        ascending.append(True)
+
+        # Handle sort on index column if show_index=True
+        if self.show_index:
+            rename = 'index' in fields and df.index.name is None
+            if rename:
+                df.index.name = 'index'
+        else:
+            rename = False
+
+        df_sorted = df.sort_values(fields, ascending=ascending, kind='mergesort')
+
+        # Revert temporary changes to DataFrames
         if rename:
             df.index.name = None
             df_sorted.index.name = None
+        df.drop(columns=['_index_'], inplace=True)
+        df_sorted.drop(columns=['_index_'], inplace=True)
         return df_sorted
 
     def _filter_dataframe(self, df: DataFrameType) -> DataFrameType:
@@ -348,6 +364,17 @@ class BaseTable(ReactiveData, Widget):
                                  "tuple or list.")
             filters.append(mask)
 
+        filters.extend(self._get_header_filters(df))
+
+        if filters:
+            mask = filters[0]
+            for f in filters:
+                mask &= f
+            df = df[mask]
+        return df
+
+    def _get_header_filters(self, df):
+        filters = []
         for filt in getattr(self, 'filters', []):
             col_name = filt['field']
             op = filt['type']
@@ -405,12 +432,7 @@ class BaseTable(ReactiveData, Widget):
                 raise ValueError("Regex filtering not supported.")
             else:
                 raise ValueError(f"Filter type {op!r} not recognized.")
-        if filters:
-            mask = filters[0]
-            for f in filters:
-                mask &= f
-            df = df[mask]
-        return df
+        return filters
 
     def add_filter(self, filter, column=None):
         """
@@ -1068,6 +1090,18 @@ class Tabulator(BaseTable):
     def _set_explicict_pagination(self):
         self._explicit_pagination = True
 
+    @staticmethod
+    def _validate_iloc(idx, iloc):
+        # Validate that the index returned by Pandas get_loc is a single int,
+        # as get_loc can return a slice or a mask array when it finds more
+        # than one locations.
+        if not isinstance(iloc, int):
+            raise ValueError(
+                'The Tabulator widget expects the provided `value` Pandas DataFrame '
+                'to have unique indexes, in particular when it has to deal with '
+                f'click or edit events. Found this duplicate index: {idx!r}'
+            )
+
     def _validate(self, *events):
         super()._validate(*events)
         if self.value is not None:
@@ -1087,18 +1121,29 @@ class Tabulator(BaseTable):
 
     def _process_event(self, event):
         event_col = self._renamed_cols.get(event.column, event.column)
-        if self.pagination == 'remote':
+        processed = self._sort_df(self._processed)
+        if self.pagination in ['local', 'remote']:
             nrows = self.page_size
             event.row = event.row+(self.page-1)*nrows
+        event_row = event.row
         if event_col not in self.buttons:
-            if event_col not in self._processed.columns:
-                event.value = self._processed.index[event.row]
+            if event_col not in processed.columns:
+                event.value = processed.index[event_row]
             else:
-                event.value = self._processed[event_col].iloc[event.row]
+                event.value = processed[event_col].iloc[event_row]
+        # Set the old attribute on a table edit event
+        if event.event_name == 'table-edit' and self._old is not None:
+            old_processed = self._sort_df(self._old)
+            event.old = old_processed[event_col].iloc[event_row]
+        # We want to return the index of the original `value` dataframe.
+        if self._filters or self.filters or self.sorters:
+            idx = processed.index[event.row]
+            iloc = self.value.index.get_loc(idx)
+            self._validate_iloc(idx, iloc)
+            event.row = iloc
         if event.event_name == 'table-edit':
-            if self._old is not None:
-                event.old = self._old[event_col].iloc[event.row]
             for cb in self._on_edit_callbacks:
+                print(cb)
                 state.execute(partial(cb, event))
             self._update_style()
         else:
@@ -1109,7 +1154,9 @@ class Tabulator(BaseTable):
 
     def _get_theme(self, theme, resources=None):
         from ..io.resources import RESOURCE_MODE
-        from ..models.tabulator import THEME_PATH, THEME_URL, _get_theme_url
+        from ..models.tabulator import (
+            _TABULATOR_THEMES_MAPPING, THEME_PATH, THEME_URL, _get_theme_url,
+        )
         if RESOURCE_MODE == 'server' and resources in (None, 'server'):
             theme_url = f'{LOCAL_DIST}bundled/datatabulator/{THEME_PATH}'
             if state.rel_path:
@@ -1119,7 +1166,8 @@ class Tabulator(BaseTable):
         # Ensure theme_url updates before theme
         cdn_url = _get_theme_url(THEME_URL, theme)
         theme_url = _get_theme_url(theme_url, theme)
-        fname = 'tabulator' if self.theme == 'default' else 'tabulator_'+self.theme
+        theme_ = _TABULATOR_THEMES_MAPPING.get(self.theme, self.theme)
+        fname = 'tabulator' if theme_ == 'default' else 'tabulator_' + theme_
         if self._widget_type is not None:
             self._widget_type.__css_raw__ = [f'{cdn_url}{fname}.min.css']
         return theme_url, theme
@@ -1146,6 +1194,29 @@ class Tabulator(BaseTable):
                 # update to config
                 return
         model.configuration = self._get_configuration(model.columns)
+
+    def _process_data(self, data):
+        # Extending _process_data to cover the case when header filters are
+        # active and a cell is edited. In that case the data received from the
+        # front-end is the full table, not just the filtered one. However the
+        # _processed data is already filtered, this made the comparison between
+        # the new data and old data wrong. This extension replicates the
+        # front-end filtering - if need be - to be able to correctly make the
+        # comparison and update the data hold by the backend.
+        if not self.filters:
+            return super()._process_data(data)
+        import pandas as pd
+        df = pd.DataFrame(data)
+        filters = self._get_header_filters(df)
+        if filters:
+            mask = filters[0]
+            for f in filters:
+                mask &= f
+            df = df[mask]
+        data = {
+            col: df[col].values for col in df.columns
+        }
+        return super()._process_data(data)
 
     def _get_data(self):
         if self.pagination != 'remote' or self.value is None:
@@ -1360,7 +1431,9 @@ class Tabulator(BaseTable):
             indices = []
             for v in index.values:
                 try:
-                    indices.append(self._processed.index.get_loc(v))
+                    iloc = self._processed.index.get_loc(v)
+                    self._validate_iloc(v ,iloc)
+                    indices.append(iloc)
                 except KeyError:
                     continue
             nrows = self.page_size
@@ -1393,7 +1466,9 @@ class Tabulator(BaseTable):
         indices = []
         for v in index.values:
             try:
-                indices.append(self.value.index.get_loc(v))
+                iloc = self.value.index.get_loc(v)
+                self._validate_iloc(v, iloc)
+                indices.append(iloc)
             except KeyError:
                 continue
         self.selection = indices
