@@ -196,8 +196,8 @@ def server_html_page_for_session(
     return html_page_for_render_items(bundle, {}, [render_item], title,
         template=template, template_variables=template_variables)
 
-def autoload_js_script(doc, resources, token, element_id, app_path, absolute_url):
-    resources = Resources.from_bokeh(resources)
+def autoload_js_script(doc, resources, token, element_id, app_path, absolute_url, absolute=False):
+    resources = Resources.from_bokeh(resources, absolute=absolute)
     bundle = bundle_resources(doc.roots, resources)
 
     render_items = [RenderItem(token=token, elementid=element_id, use_for_title=False)]
@@ -212,7 +212,9 @@ def destroy_document(self, session):
     multiple documents are destroyed in quick succession we do not
     schedule excessive garbage collection.
     """
-    self.remove_on_change(session)
+    if session is not None:
+        self.remove_on_change(session)
+
     del self._roots
     del self._theme
     del self._template
@@ -238,16 +240,13 @@ def destroy_document(self, session):
     at = dt.datetime.now() + dt.timedelta(seconds=5)
     state.schedule_task('gc.collect', gc.collect, at=at)
 
+    del self.destroy
 
 # Patch Server to attach task factory to asyncio loop and handle Admin server context
 class Server(BokehServer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        try:
-            _add_task_factory(self.io_loop.asyncio_loop) # type: ignore
-        except Exception:
-            pass
         if state._admin_context:
             state._admin_context._loop = self._loop
 
@@ -274,7 +273,7 @@ class Application(BkApplication):
 
     def initialize_document(self, doc):
         super().initialize_document(doc)
-        if doc in state._templates:
+        if doc in state._templates and doc not in state._templates[doc]._documents:
             template = state._templates[doc]
             template.server_doc(title=template.title, location=True, doc=doc)
 
@@ -596,28 +595,6 @@ if (
      'pytest' in sys.modules)
 ):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
-def _add_task_factory(loop):
-    """
-    Adds a Task factory to the asyncio IOLoop that ensures child tasks
-    have access to their parent.
-    """
-    if getattr(loop, '_has_panel_task_factory', False):
-        return
-    existing_factory = loop.get_task_factory()
-    def task_factory(loop, coro):
-        try:
-            parent_task = asyncio.current_task()
-        except RuntimeError:
-            parent_task = None
-        if existing_factory:
-            task = existing_factory(loop, coro)
-        else:
-            task = asyncio.Task(coro, loop=loop)
-        task.parent_task = parent_task
-        return task
-    loop.set_task_factory(task_factory)
-    loop._has_panel_task_factory = True
 
 #---------------------------------------------------------------------
 # Public API

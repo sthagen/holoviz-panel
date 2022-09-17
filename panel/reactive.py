@@ -26,6 +26,7 @@ import param
 
 from bokeh.core.property.descriptors import UnsetValueError
 from bokeh.model import DataModel
+from packaging.version import Version
 from param.parameterized import ParameterizedMetaclass, Watcher
 
 from .io.document import unlocked
@@ -275,7 +276,10 @@ class Syncable(Renderable):
         if root is None:
             return
         ref = root.ref['id']
-        self._models.pop(ref, None)
+        if ref in self._models:
+            model, _ = self._models.pop(ref, None)
+            model._callbacks = {}
+            model._event_callbacks = {}
         comm, client_comm = self._comms.pop(ref, (None, None))
         if comm:
             try:
@@ -1023,7 +1027,6 @@ class ReactiveData(SyncableData):
 
     def __init__(self, **params):
         super().__init__(**params)
-        self._old = None
 
     def _update_selection(self, indices: List[int]) -> None:
         self.selection = indices
@@ -1047,6 +1050,13 @@ class ReactiveData(SyncableData):
                         iv = dt.date.fromtimestamp(iv/1000)
                     new_values.append(iv)
                 converted = new_values
+        elif 'pandas' in sys.modules:
+            import pandas as pd
+            if Version(pd.__version__) >= Version('1.1.0'):
+                from pandas.core.arrays.masked import BaseMaskedDtype
+                if isinstance(dtype, BaseMaskedDtype):
+                    values = [dtype.na_value if v == '<NA>' else v for v in values]
+            converted = pd.Series(values).astype(dtype).values
         else:
             converted = values.astype(dtype)
         return values if converted is None else converted
@@ -1054,10 +1064,9 @@ class ReactiveData(SyncableData):
     def _process_data(self, data: Mapping[str, List | Dict[int, Any] | np.ndarray]) -> None:
         if self._updating:
             return
-
         # Get old data to compare to
         old_raw, old_data = self._get_data()
-        self._old = old_raw = old_raw.copy()
+        old_raw = old_raw.copy()
         if hasattr(old_raw, 'columns'):
             columns = list(old_raw.columns) # type: ignore
         else:
@@ -1675,8 +1684,12 @@ class ReactiveHTML(Reactive, metaclass=ReactiveHTMLMetaclass):
         event_type = event.data['type']
         star_cbs = self._event_callbacks.get('*', {})
         node_cbs = self._event_callbacks.get(event.node, {})
+
+        def match(node, pattern):
+            return re.findall(re.sub(r'\{\{.*loop.index.*\}\}', r'\\d+', pattern), node)
+
         inline_cbs = {attr: [getattr(self, p)] for node, attr, p in self._inline_callbacks
-                      if node == event.node}
+                      if node == event.node or match(event.node, node)}
         event_cbs = (
             node_cbs.get(event_type, []) + node_cbs.get('*', []) +
             star_cbs.get(event_type, []) + star_cbs.get('*', []) +

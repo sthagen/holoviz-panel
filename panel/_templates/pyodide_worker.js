@@ -1,10 +1,10 @@
 importScripts("{{ PYODIDE_URL }}");
 
-function sendPatch(patch, buffers) {
+function sendPatch(patch, buffers, msg_id) {
   self.postMessage({
     type: 'patch',
     patch: patch,
-    buffers: buffers,
+    buffers: buffers
   })
 }
 
@@ -34,26 +34,15 @@ async function startApplication() {
 self.onmessage = async (event) => {
   if (event.data.type === 'rendered') {
     self.pyodide.runPythonAsync(`
-    import pyodide
+    from panel.io.state import state
+    from panel.io.pyodide import _link_docs_worker
 
-    from bokeh.protocol.messages.patch_doc import process_document_events
-    from panel import state
-
-    def pysync(event):
-        json_patch, buffers = process_document_events([event], use_buffers=True)
-        buffer_map = {}
-        for (ref, buffer) in buffers:
-            buffer_map[ref['id']] = pyodide.to_js(buffer).buffer
-        sendPatch(json_patch, pyodide.to_js(buffer_map))
-
-    state.curdoc.on_change(pysync)
-    state.curdoc.callbacks.trigger_json_event(
-        {'event_name': 'document_ready', 'event_values': {}
-    })
+    _link_docs_worker(state.curdoc, sendPatch)
     `)
   } else if (event.data.type === 'patch') {
     self.pyodide.runPythonAsync(`
     import json
+
     state.curdoc.apply_json_patch(json.loads('${event.data.patch}'))
     `)
   }

@@ -108,6 +108,7 @@ class BaseTable(ReactiveData, Widget):
     def __init__(self, value=None, **params):
         self._renamed_cols = {}
         self._filters = []
+        self._index_mapping = {}
         super().__init__(value=value, **params)
 
     @param.depends('value', watch=True, on_init=True)
@@ -233,6 +234,13 @@ class BaseTable(ReactiveData, Widget):
     def _update_cds(self, *events: param.parameterized.Event):
         old_processed = self._processed
         self._processed, data = self._get_data()
+        if self._processed is not None and not (isinstance(self._processed, list) and not self._processed):
+            self._index_mapping = {
+                i: index
+                for i, index in enumerate(self._processed.index)
+            }
+        else:
+            self._index_mapping = {}
         # If there is a selection we have to compute new index
         if self.selection and old_processed is not None:
             indexes = list(self._processed.index)
@@ -308,7 +316,18 @@ class BaseTable(ReactiveData, Widget):
         else:
             rename = False
 
-        df_sorted = df.sort_values(fields, ascending=ascending, kind='mergesort')
+        def tabulator_sorter(col):
+            # Tabulator JS defines its own sorting algorithm:
+            # - strings's case isn't taken into account
+            if col.dtype.kind not in 'SUO':
+                return col
+            try:
+                return col.str.lower()
+            except Exception:
+                return col
+
+        df_sorted = df.sort_values(fields, ascending=ascending, kind='mergesort',
+                                  key=tabulator_sorter)
 
         # Revert temporary changes to DataFrames
         if rename:
@@ -334,6 +353,8 @@ class BaseTable(ReactiveData, Widget):
         """
         filters = []
         for col_name, filt in self._filters:
+            if col_name not in df.columns:
+                continue
             if isinstance(filt, (FunctionType, MethodType)):
                 df = filt(df)
                 continue
@@ -342,7 +363,9 @@ class BaseTable(ReactiveData, Widget):
             else:
                 val = filt
             column = df[col_name]
-            if np.isscalar(val):
+            if val is None:
+                continue
+            elif np.isscalar(val):
                 mask = column == val
             elif isinstance(val, (list, set)):
                 if not val:
@@ -370,6 +393,9 @@ class BaseTable(ReactiveData, Widget):
             mask = filters[0]
             for f in filters:
                 mask &= f
+            if self._edited_indexes:
+                edited_mask = (df.index.isin(self._edited_indexes))
+                mask = mask | edited_mask
             df = df[mask]
         return df
 
@@ -387,6 +413,8 @@ class BaseTable(ReactiveData, Widget):
                     col = df.index
                 else:
                     col = df.index.get_level_values(self.indexes.index(col_name))
+            else:
+                continue
 
             # Sometimes Tabulator will provide a zero/single element list
             if isinstance(val, list):
@@ -1061,9 +1089,11 @@ class Tabulator(BaseTable):
         self.style = None
         self._computed_styler = None
         self._child_panels = {}
+        self._edited_indexes = []
         self._explicit_pagination = 'pagination' in params
         self._on_edit_callbacks = []
         self._on_click_callbacks = {}
+        self._old_value = None
         super().__init__(value=value, **params)
         self._configuration = configuration
         self.param.watch(self._update_children, self._content_params)
@@ -1121,29 +1151,32 @@ class Tabulator(BaseTable):
 
     def _process_event(self, event):
         event_col = self._renamed_cols.get(event.column, event.column)
-        processed = self._sort_df(self._processed)
-        if self.pagination in ['local', 'remote']:
+        if self.pagination in ['remote']:
             nrows = self.page_size
             event.row = event.row+(self.page-1)*nrows
-        event_row = event.row
+
+        idx = self._index_mapping[event.row]
+        iloc = self.value.index.get_loc(idx)
+        self._validate_iloc(idx, iloc)
+        event.row = iloc
         if event_col not in self.buttons:
-            if event_col not in processed.columns:
-                event.value = processed.index[event_row]
+            if event_col not in self.value.columns:
+                event.value = self.value.index[event.row]
             else:
-                event.value = processed[event_col].iloc[event_row]
+                event.value = self.value[event_col].iloc[event.row]
+
+        # Check if edited cell was filtered
+        import pandas as pd
+        filter_df = pd.DataFrame([event.value], columns=[event.column])
+        filters = self._get_header_filters(filter_df)
+        if filters and filters[0].any():
+            self._edited_indexes.append(idx)
+
         # Set the old attribute on a table edit event
-        if event.event_name == 'table-edit' and self._old is not None:
-            old_processed = self._sort_df(self._old)
-            event.old = old_processed[event_col].iloc[event_row]
-        # We want to return the index of the original `value` dataframe.
-        if self._filters or self.filters or self.sorters:
-            idx = processed.index[event.row]
-            iloc = self.value.index.get_loc(idx)
-            self._validate_iloc(idx, iloc)
-            event.row = iloc
+        if event.event_name == 'table-edit' and self._old_value is not None:
+            event.old = self._old_value[event_col].iloc[event.row]
         if event.event_name == 'table-edit':
             for cb in self._on_edit_callbacks:
-                print(cb)
                 state.execute(partial(cb, event))
             self._update_style()
         else:
@@ -1202,9 +1235,12 @@ class Tabulator(BaseTable):
         # _processed data is already filtered, this made the comparison between
         # the new data and old data wrong. This extension replicates the
         # front-end filtering - if need be - to be able to correctly make the
-        # comparison and update the data hold by the backend.
-        if not self.filters:
-            return super()._process_data(data)
+        # comparison and update the data held by the backend.
+
+        # It also makes a copy of the value dataframe, to use it to obtain
+        # the old value in a table-edit event.
+        self._old_value = self.value.copy()
+
         import pandas as pd
         df = pd.DataFrame(data)
         filters = self._get_header_filters(df)
@@ -1212,6 +1248,9 @@ class Tabulator(BaseTable):
             mask = filters[0]
             for f in filters:
                 mask &= f
+            if self._edited_indexes:
+                edited_mask = (df['index'].isin(self._edited_indexes))
+                mask = mask | edited_mask
             df = df[mask]
         data = {
             col: df[col].values for col in df.columns
@@ -1226,6 +1265,7 @@ class Tabulator(BaseTable):
         df = self._sort_df(df)
         nrows = self.page_size
         start = (self.page-1)*nrows
+
         page_df = df.iloc[start: start+nrows]
         if isinstance(self.value.index, pd.MultiIndex):
             indexes = [
@@ -1395,10 +1435,14 @@ class Tabulator(BaseTable):
         self._update_selectable()
 
     def _update_cds(self, *events):
+        if any(event.name == 'filters' for event in events):
+            self._edited_indexes = []
         page_events = ('page', 'page_size', 'sorters', 'filters')
         if self._updating:
             return
-        elif (events and all(e.name in page_events for e in events) and not self.pagination):
+        elif events and all(e.name in page_events[:-1] for e in events) and self.pagination == 'local':
+            return
+        elif events and all(e.name in page_events for e in events) and not self.pagination:
             self._processed, _ = self._get_data()
             return
         recompute = not all(
@@ -1560,8 +1604,15 @@ class Tabulator(BaseTable):
                 elif col.dtype.kind == 'b':
                     fspec['headerFilter'] = 'tickCross'
                     fspec['headerFilterParams'] = {'tristate': True, 'indeterminateValue': None}
+                elif isdatetime(col) or col.dtype.kind == 'M':
+                    fspec['headerFilter'] = False
                 else:
                     fspec['headerFilter'] = True
+            elif isinstance(column.editor, DateEditor):
+                # Datetime filtering currently broken with Tabulator 5.4.3
+                # Initial (empty) value of filter is passed to luxon.js
+                # and causes error
+                fspec['headerFilter'] = False
             else:
                 fspec['headerFilter'] = True
             return fspec
@@ -1575,9 +1626,24 @@ class Tabulator(BaseTable):
             filter_params = {}
             filter_func = None
             filter_placeholder = None
-        fspec['headerFilter'] = filter_type
-        if filter_type == 'select' and not filter_params:
-            filter_params = {'values': True}
+        # Tabulator JS renamed select and autocomplete to list, and relies on
+        # valuesLookup set to True to autopopulate the filter, instead of
+        # values. This ensure backwards compatibility.
+        if filter_type in ['select', 'autocomplete']:
+            self.param.warning(
+                f'The {filter_type!r} filter has been deprecated, use '
+                f'instead the "list" filter type to configure column {column.field!r}'
+            )
+            filter_type = 'list'
+            if filter_params.get('values', False) is True:
+                self.param.warning(
+                    'Setting "values" to True has been deprecated, instead '
+                    f'set "valuesLookup" to True to configure column {column.field!r}'
+                )
+                del filter_params['values']
+                filter_params['valuesLookup'] = True
+        if filter_type == 'list' and not filter_params:
+            filter_params = {'valuesLookup': True}
         fspec['headerFilter'] = filter_type
         if filter_params:
             fspec['headerFilterParams'] = filter_params
@@ -1643,6 +1709,16 @@ class Tabulator(BaseTable):
                 formatter = dict(formatter)
                 col_dict['formatter'] = formatter.pop('type')
                 col_dict['formatterParams'] = formatter
+            col_name = self._renamed_cols[column.field]
+            if column.field in self.indexes:
+                if len(self.indexes) == 1:
+                    dtype = self.value.index.dtype
+                else:
+                    dtype = self.value.index.get_level_values(self.indexes.index(column.field)).dtype
+            else:
+                dtype = self.value.dtypes[col_name]
+            if dtype.kind == 'M':
+                col_dict['sorter'] = 'timestamp'
             editor = self.editors.get(column.field)
             if column.field in self.editors and editor is None:
                 col_dict['editable'] = False
@@ -1652,6 +1728,15 @@ class Tabulator(BaseTable):
                 editor = dict(editor)
                 col_dict['editor'] = editor.pop('type')
                 col_dict['editorParams'] = editor
+            if col_dict.get('editor') in ['select', 'autocomplete']:
+                self.param.warning(
+                    f'The {col_dict["editor"]!r} editor has been deprecated, use '
+                    f'instead the "list" editor type to configure column {column.field!r}'
+                )
+                col_dict['editor'] = 'list'
+                if col_dict.get('editorParams', {}).get('values', False) is True:
+                    del col_dict['editorParams']['values']
+                    col_dict['editorParams']['valuesLookup']
             if column.field in self.frozen_columns or i in self.frozen_columns:
                 col_dict['frozen'] = True
             if isinstance(self.widths, dict) and isinstance(self.widths.get(column.field), str):
