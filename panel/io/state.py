@@ -18,7 +18,7 @@ from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from functools import partial
+from functools import partial, wraps
 from typing import (
     TYPE_CHECKING, Any, Callable, ClassVar, Coroutine, Dict,
     Iterator as TIterator, List, Optional, Tuple, TypeVar, Union,
@@ -99,6 +99,9 @@ class _state(param.Parameterized):
        Object with encrypt and decrypt methods to support encryption
        of secret variables including OAuth information.""")
 
+    loaded = param.Boolean(default=False, doc="""
+       Whether the page is fully loaded.""")
+
     rel_path = param.String(default='', readonly=True, doc="""
        Relative path from the current app being served to the root URL.
        If application is embedded in a different server via autoload.js
@@ -162,6 +165,7 @@ class _state(param.Parameterized):
     # Dictionary of callbacks to be triggered on app load
     _onload: ClassVar[Dict[Document, Callable[[], None]]] = WeakKeyDictionary()
     _on_session_created: ClassVar[List[Callable[[BokehSessionContext], []]]] = []
+    _loaded: ClassVar[WeakKeyDictionary[Document, bool]] = WeakKeyDictionary()
 
     # Module that was run during setup
     _setup_module = None
@@ -317,12 +321,14 @@ class _state(param.Parameterized):
 
     def _schedule_on_load(self, doc: Document, event) -> None:
         if self._thread_pool:
-            self._thread_pool.submit(self._on_load, doc)
+            future = self._thread_pool.submit(self._on_load, doc)
+            future.add_done_callback(self._handle_future_exception)
         else:
             self._on_load(doc)
 
     def _on_load(self, doc: Optional[Document] = None) -> None:
         doc = doc or self.curdoc
+        self._loaded[doc] = True
         callbacks = self._onload.pop(doc, [])
         if not callbacks:
             return
@@ -354,9 +360,35 @@ class _state(param.Parameterized):
             now = dt.datetime.now().timestamp()
             call_time_seconds = (at - now)
             self._ioloop.call_later(delay=call_time_seconds, callback=partial(self._scheduled_cb, name))
-        res = cb()
-        if inspect.isawaitable(res):
-            await res
+        try:
+            res = cb()
+            if inspect.isawaitable(res):
+                await res
+        except Exception as e:
+            self._handle_exception(e)
+
+    def _handle_exception_wrapper(self, callback):
+        @wraps(callback)
+        def wrapper(*args, **kw):
+            try:
+                return callback(*args, **kw)
+            except Exception as e:
+                self._handle_exception(e)
+        return wrapper
+
+    def _handle_future_exception(self, future):
+        exception = future.exception()
+        if exception:
+            self._handle_exception(exception)
+
+    def _handle_exception(self, exception):
+        from ..config import config
+        thread = threading.current_thread()
+        thread_id = thread.ident if thread else None
+        if config.exception_handler and (self._thread_id is None or self._thread_id == thread_id):
+            config.exception_handler(exception)
+        else:
+            raise exception
 
     #----------------------------------------------------------------
     # Public Methods
@@ -517,10 +549,13 @@ class _state(param.Parameterized):
         doc = self.curdoc
         if param.parameterized.iscoroutinefunction(cb):
             param.parameterized.async_executor(callback)
-        elif doc and doc.session_context and (schedule == True or (schedule == 'auto' and self._unblocked(doc))):
-            doc.add_next_tick_callback(callback)
+        elif doc and doc.session_context and (schedule == True or (schedule == 'auto' and not self._unblocked(doc))):
+            doc.add_next_tick_callback(self._handle_exception_wrapper(callback))
         else:
-            callback()
+            try:
+                callback()
+            except Exception as e:
+                state._handle_exception(e)
 
     def get_profile(self, profile: str):
         """
@@ -584,7 +619,8 @@ class _state(param.Parameterized):
         """
         if self.curdoc is None:
             if self._thread_pool:
-                self._thread_pool.submit(partial(self.execute, callback, schedule=False))
+                future = self._thread_pool.submit(partial(self.execute, callback, schedule=False))
+                future.add_done_callback(self._handle_exception)
             else:
                 self.execute(callback, schedule=False)
             return
@@ -815,6 +851,16 @@ class _state(param.Parameterized):
     @property
     def headers(self) -> Dict[str, str | List[str]]:
         return self.curdoc.session_context.request.headers if self.curdoc and self.curdoc.session_context else {}
+
+    @property
+    def loaded(self) -> bool:
+        curdoc = self.curdoc
+        if curdoc:
+            if curdoc in self._loaded:
+                return self._loaded[curdoc]
+            elif curdoc.session_context:
+                return False
+        return True
 
     @property
     def location(self) -> Location | None:

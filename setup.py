@@ -92,7 +92,8 @@ try:
 
         def run(self):
             """Do nothing so the command intentionally fails."""
-            _build_paneljs()
+            if not PANEL_LITE_BUILD:
+                _build_paneljs()
             bdist_wheel.run(self)
 
     _COMMANDS['bdist_wheel'] = CustomBdistWheelCommand
@@ -141,6 +142,7 @@ _tests = [
     'ipython >=7.0',
     'holoviews',
     'diskcache',
+    "markdown-it-py",
     # Temporary pins (jupyter_bokeh needs updates)
     'ipywidgets <8.0'
 ]

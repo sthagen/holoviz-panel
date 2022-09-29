@@ -129,10 +129,11 @@ def async_execute(func: Callable[..., None]) -> None:
     if not state.curdoc or not state.curdoc.session_context:
         ioloop = IOLoop.current()
         event_loop = ioloop.asyncio_loop # type: ignore
+        wrapper = state._handle_exception_wrapper(func)
         if event_loop.is_running():
-            ioloop.add_callback(func)
+            ioloop.add_callback(wrapper)
         else:
-            event_loop.run_until_complete(func())
+            event_loop.run_until_complete(wrapper())
         return
 
     if isinstance(func, partial) and hasattr(func.func, 'lock'):
@@ -143,7 +144,10 @@ def async_execute(func: Callable[..., None]) -> None:
     @wraps(func)
     async def wrapper(*args, **kw):
         with set_curdoc(curdoc):
-            return await func(*args, **kw)
+            try:
+                return await func(*args, **kw)
+            except Exception as e:
+                state._handle_exception(e)
     if unlock:
         wrapper.nolock = True # type: ignore
     state.curdoc.add_next_tick_callback(wrapper)
@@ -275,7 +279,8 @@ class Application(BkApplication):
         super().initialize_document(doc)
         if doc in state._templates and doc not in state._templates[doc]._documents:
             template = state._templates[doc]
-            template.server_doc(title=template.title, location=True, doc=doc)
+            with set_curdoc(doc):
+                template.server_doc(title=template.title, location=True, doc=doc)
 
 bokeh.command.util.Application = Application # type: ignore
 
@@ -294,8 +299,7 @@ class SessionPrefixHandler:
         # Handle autoload.js absolute paths
         abs_url = self.get_argument('bokeh-absolute-url', default=None)
         if abs_url is not None:
-            app_path = self.get_argument('bokeh-app-path', default='')
-            rel_path = abs_url.replace(app_path, '')
+            rel_path = abs_url.replace(self.application_context._url, '')
 
         with edit_readonly(state):
             state.base_url = base_url
@@ -323,6 +327,7 @@ class DocHandler(BkDocHandler, SessionPrefixHandler):
                     else:
                         template = ERROR_TEMPLATE
                     page = template.render(
+                        npm_cdn=config.npn_cdn,
                         title='Panel: Authorization Error',
                         error_type='Authorization Error',
                         error='User is not authorized.',

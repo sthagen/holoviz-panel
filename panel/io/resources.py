@@ -25,12 +25,13 @@ from jinja2.environment import Environment
 from jinja2.loaders import FileSystemLoader
 from markupsafe import Markup
 
+from ..config import config
 from ..util import isurl, url_path
 from .state import state
 
 with open(Path(__file__).parent.parent / 'package.json') as f:
     package_json = json.load(f)
-    js_version = package_json['version'].split('+')[0]
+    JS_VERSION = package_json['version'].split('+')[0]
 
 def get_env():
     ''' Get the correct Jinja2 Environment, also for frozen scripts.
@@ -59,19 +60,39 @@ BASE_TEMPLATE = _env.get_template('base.html')
 ERROR_TEMPLATE = _env.get_template('error.html')
 DEFAULT_TITLE = "Panel Application"
 JS_RESOURCES = _env.get_template('js_resources.html')
-CDN_DIST = f"https://unpkg.com/@holoviz/panel@{js_version}/dist/"
+CDN_DIST = f"https://cdn.holoviz.org/panel/{JS_VERSION}/dist/"
 DOC_DIST = "https://panel.holoviz.org/_static/"
 LOCAL_DIST = "static/extensions/panel/"
 COMPONENT_PATH = "components/"
 
+RESOURCE_URLS = {
+    'font-awesome': {
+        'zip': 'https://use.fontawesome.com/releases/v5.15.4/fontawesome-free-5.15.4-web.zip',
+        'src': 'fontawesome-free-5.15.4-web/',
+        'exclude': []
+    },
+    'bootstrap4': {
+        'tar': 'https://registry.npmjs.org/bootstrap/-/bootstrap-4.6.1.tgz',
+        'src': 'package/dist',
+        'exclude': [],
+        'dest': ''
+    },
+    'jQuery': {
+        'tar': 'https://registry.npmjs.org/jquery/-/jquery-3.5.1.tgz',
+        'src': 'package/dist',
+        'exclude': [],
+        'dest': ''
+    }
+}
+
 CSS_URLS = {
-    'font-awesome': 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css',
-    'bootstrap4': 'https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/css/bootstrap.min.css'
+    'font-awesome': f'{CDN_DIST}bundled/font-awesome/css/all.min.css',
+    'bootstrap4': f'{CDN_DIST}bundled/bootstrap4/css/bootstrap.min.css'
 }
 
 JS_URLS = {
-    'jQuery': 'https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js',
-    'bootstrap4': 'https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/js/bootstrap.bundle.min.js'
+    'jQuery': f'{CDN_DIST}bundled/jquery/jquery.slim.min.js',
+    'bootstrap4': f'{CDN_DIST}bundled/bootstrap4/js/bootstrap.bundle.min.js'
 }
 
 extension_dirs['panel'] = str(DIST_DIR)
@@ -142,15 +163,32 @@ def loading_css():
     """
 
 def bundled_files(model, file_type='javascript'):
-    bdir = os.path.join(PANEL_DIR, 'dist', 'bundled', model.__name__.lower())
+    bdir = BUNDLE_DIR / model.__name__.lower()
     name = model.__name__.lower()
+    shared = list((JS_URLS if file_type == 'javascript' else CSS_URLS).values())
 
     files = []
     for url in getattr(model, f"__{file_type}_raw__", []):
-        filepath = url_path(url)
+        if url.startswith(CDN_DIST):
+            filepath = url.replace(f'{CDN_DIST}bundled/', '')
+        elif url.startswith(config.npm_cdn):
+            filepath = url.replace(config.npm_cdn, '')[1:]
+        else:
+            filepath = url_path(url)
         test_filepath = filepath.split('?')[0]
-        if RESOURCE_MODE == 'server' and os.path.isfile(os.path.join(bdir, test_filepath)):
-            files.append(f'static/extensions/panel/bundled/{name}/{filepath}')
+        if url in shared:
+            prefixed = filepath
+            test_path = BUNDLE_DIR / test_filepath
+        else:
+            prefixed = f'{name}/{filepath}'
+            test_path = bdir / test_filepath
+        if test_path.is_file():
+            if RESOURCE_MODE == 'server':
+                files.append(f'static/extensions/panel/bundled/{prefixed}')
+            elif filepath == test_filepath:
+                files.append(f'{CDN_DIST}bundled/{prefixed}')
+            else:
+                files.append(url)
         else:
             files.append(url)
     return files
@@ -318,8 +356,6 @@ class Resources(BkResources):
         from ..config import config
         modules = list(config.js_modules.values())
         self.extra_resources(modules, '__javascript_modules__')
-
-
         return modules
 
     @property
@@ -365,6 +401,19 @@ class Bundle(BkBundle):
         self.js_modules = kwargs.pop("js_modules", js_modules)
         super().__init__(**kwargs)
 
+    def _adjust_paths(self, resources):
+        redirected = []
+        cdn_base = f'{config.npm_cdn}/@holoviz/panel@{JS_VERSION}/dist/'
+        for resource in resources:
+            resource = resource.replace('https://unpkg.com', config.npm_cdn)
+            if resource.startswith(cdn_base):
+                resource = resource.replace(cdn_base, CDN_DIST)
+            if (resource.startswith('static/') and state.rel_path):
+                if state.rel_path:
+                    resource = f'{state.rel_path}/{resource}'
+            redirected.append(resource)
+        return redirected
+
     @classmethod
     def from_bokeh(cls, bk_bundle):
         return cls(
@@ -377,6 +426,6 @@ class Bundle(BkBundle):
 
     def _render_js(self):
         return JS_RESOURCES.render(
-            js_raw=self.js_raw, js_files=self.js_files,
-            js_modules=self.js_modules, hashes=self.hashes
+            js_raw=self.js_raw, js_files=self._adjust_paths(self.js_files),
+            js_modules=self._adjust_paths(self.js_modules), hashes=self.hashes
         )

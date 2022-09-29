@@ -5,7 +5,7 @@ import json
 import os
 import sys
 
-from typing import Any, Tuple
+from typing import Any, Callable, Tuple
 
 import param
 
@@ -22,10 +22,10 @@ from bokeh.protocol.messages.patch_doc import process_document_events
 from js import JSON
 
 from ..config import config
-from ..util import isurl
+from ..util import is_holoviews, isurl
 from . import resources
 from .document import MockSessionContext
-from .mime_render import UNDEFINED, exec_with_return, format_mime
+from .mime_render import WriteCallbackStream, exec_with_return, format_mime
 from .state import state
 
 resources.RESOURCE_MODE = 'CDN'
@@ -113,6 +113,7 @@ def _model_json(model: Model, target: str) -> Tuple[Document, str]:
         The serialized JSON representation of the Bokeh Model.
     """
     doc = Document()
+    doc.hold()
     model.server_doc(doc=doc)
     model = doc.roots[0]
     docs_json, _ = standalone_docs_json_and_render_items(
@@ -142,27 +143,29 @@ def _link_docs(pydoc: Document, jsdoc: Any) -> None:
         The Javascript Bokeh Document instance to sync.
     """
     def jssync(event):
-        if (getattr(event, 'setter_id', None) is not None):
+        if (event.setter_id is not None and event.setter_id == 'python'):
             return
-        events = [event]
-        json_patch = jsdoc.create_json_patch_string(pyodide.ffi.to_js(events))
-        pydoc.apply_json_patch(json.loads(json_patch))
+        json_patch = jsdoc.create_json_patch_string(pyodide.ffi.to_js([event]))
+        pydoc.apply_json_patch(json.loads(json_patch), setter='js')
 
     jsdoc.on_change(pyodide.ffi.create_proxy(jssync), pyodide.ffi.to_js(False))
 
     def pysync(event):
+        if event.setter is not None and event.setter == 'js':
+            return
         json_patch, buffers = process_document_events([event], use_buffers=True)
         buffer_map = {}
         for (ref, buffer) in buffers:
             buffer_map[ref['id']] = pyodide.ffi.to_js(buffer).buffer
-        jsdoc.apply_json_patch(JSON.parse(json_patch), pyodide.ffi.to_js(buffer_map), setter_id='js')
+        jsdoc.apply_json_patch(JSON.parse(json_patch), pyodide.ffi.to_js(buffer_map), setter_id='python')
 
     pydoc.on_change(pysync)
+    pydoc.unhold()
     pydoc.callbacks.trigger_json_event(
         {'event_name': 'document_ready', 'event_values': {}
     })
 
-def _link_docs_worker(doc: Document, dispatch_fn: Any, msg_id: str | None = None):
+def _link_docs_worker(doc: Document, dispatch_fn: Any, msg_id: str | None = None, setter: str | None = None):
     """
     Links the Python document to a dispatch_fn which can be used to
     sync messages between a WebWorker and the main thread in the
@@ -174,10 +177,14 @@ def _link_docs_worker(doc: Document, dispatch_fn: Any, msg_id: str | None = None
         The document to dispatch messages from.
     dispatch_fn: JS function
         The Javascript function to dispatch messages to.
+    setter: str
+        Setter ID used for suppressing events.
     msg_id: str | None
         An optional message ID to pass through to the dispatch_fn.
     """
     def pysync(event):
+        if setter is not None and event.setter == setter:
+            return
         json_patch, buffers = process_document_events([event], use_buffers=True)
         buffer_map = {}
         for (ref, buffer) in buffers:
@@ -185,6 +192,7 @@ def _link_docs_worker(doc: Document, dispatch_fn: Any, msg_id: str | None = None
         dispatch_fn(json_patch, pyodide.ffi.to_js(buffer_map), msg_id)
 
     doc.on_change(pysync)
+    doc.unhold()
     doc.callbacks.trigger_json_event(
         {'event_name': 'document_ready', 'event_values': {}
     })
@@ -254,6 +262,7 @@ def init_doc() -> None:
     """
     doc = Document()
     set_curdoc(doc)
+    doc.hold()
     doc._session_context = lambda: MockSessionContext(document=doc)
     state.curdoc = doc
 
@@ -293,6 +302,7 @@ async def write(target: str, obj: Any) -> None:
     views = await Bokeh.embed.embed_item(JSON.parse(model_json))
     jsdoc = views[0].model.document
     _link_docs(pydoc, jsdoc)
+    pydoc.unhold()
 
 def hide_loader() -> None:
     from js import document
@@ -344,7 +354,12 @@ async def write_doc(doc: Document | None = None) -> Tuple[str, str, str]:
         hide_loader()
     return docs_json, render_items, root_ids
 
-def pyrender(code: str, msg_id: str):
+def pyrender(
+    code: str,
+    stdout_callback: Callable[[str], None] | None,
+    stderr_callback: Callable[[str], None] | None,
+    target: str
+):
     """
     Executes Python code and returns a MIME representation of the
     return value.
@@ -353,8 +368,12 @@ def pyrender(code: str, msg_id: str):
     ---------
     code: str
         Python code to execute
-    msg_id: str
-        A unique ID associated with the output being rendered.
+    stdout_callback: Callable[[str, str], None] | None
+        Callback executed with output written to stdout.
+    stderr_callback: Callable[[str, str], None] | None
+        Callback executed with output written to stderr.
+    target: str
+        The ID of the DOM node to write the output into.
 
     Returns
     -------
@@ -362,15 +381,17 @@ def pyrender(code: str, msg_id: str):
     """
     from ..pane import panel as as_panel
     from ..viewable import Viewable, Viewer
-    out, stdout, stderr = exec_with_return(code)
-    ret = {
-        'stdout': stdout,
-        'stderr': stderr
-    }
-    if isinstance(out, (Model, Viewable, Viewer)):
-        doc, model_json = _model_json(as_panel(out), msg_id)
-        state.cache[msg_id] = doc
+    kwargs = {}
+    if stdout_callback:
+        kwargs['stdout'] = WriteCallbackStream(stdout_callback)
+    if stderr_callback:
+        kwargs['stderr'] = WriteCallbackStream(stderr_callback)
+    out = exec_with_return(code, **kwargs)
+    ret = {}
+    if isinstance(out, (Model, Viewable, Viewer)) or is_holoviews(out):
+        doc, model_json = _model_json(as_panel(out), target)
+        state.cache[target] = doc
         ret['content'], ret['mime_type'] = model_json, 'application/bokeh'
-    elif out is not UNDEFINED:
+    elif out is not None:
         ret['content'], ret['mime_type'] = format_mime(out)
     return pyodide.ffi.to_js(ret)
