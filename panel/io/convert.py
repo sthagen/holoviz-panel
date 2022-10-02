@@ -23,7 +23,6 @@ from typing_extensions import Literal
 
 from .. import __version__, config
 from ..util import base_version, escape
-from .document import _cleanup_doc
 from .mime_render import find_imports
 from .resources import (
     CDN_DIST, DIST_DIR, INDEX_TEMPLATE, Resources, _env as _pn_env,
@@ -42,8 +41,8 @@ PY_VERSION = base_version(__version__)
 PANEL_CDN_WHL = f'{CDN_DIST}wheels/panel-{PY_VERSION}-py3-none-any.whl'
 BOKEH_CDN_WHL = f'{CDN_DIST}wheels/bokeh-{BOKEH_VERSION}-py3-none-any.whl'
 PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.21.3/full/pyodide.js'
-PYSCRIPT_CSS = '<link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />'
-PYSCRIPT_JS = '<script defer src="https://pyscript.net/latest/pyscript.js"></script>'
+PYSCRIPT_CSS = '<link rel="stylesheet" href="https://pyscript.net/releases/2022.09.1/pyscript.css" />'
+PYSCRIPT_JS = '<script defer src="https://pyscript.net/releases/2022.09.1/pyscript.js"></script>'
 PYODIDE_JS = f'<script src="{PYODIDE_URL}"></script>'
 
 ICON_DIR = DIST_DIR / 'images'
@@ -68,8 +67,7 @@ init_doc()
 """
 
 POST = """
-await write_doc()
-"""
+await write_doc()"""
 
 PYODIDE_SCRIPT = """
 <script type="text/javascript">
@@ -90,7 +88,18 @@ main();
 INIT_SERVICE_WORKER = """
 <script type="text/javascript">
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./serviceWorker.js');
+  navigator.serviceWorker.register('./serviceWorker.js').then(reg => {
+    reg.onupdatefound = () => {
+      const installingWorker = reg.installing;
+      installingWorker.onstatechange = () => {
+        if (installingWorker.state === 'installed' &&
+            navigator.serviceWorker.controller) {
+          // Reload page if service worker is replaced
+          location.reload();
+        }
+      }
+    }
+  })
 }
 </script>
 """
@@ -201,6 +210,18 @@ def script_to_html(
 
     if requirements == 'auto':
         requirements = find_imports(source)
+    elif isinstance(requirements, str) and pathlib.Path(requirements).is_file():
+        requirements = pathlib.Path(requirements).read_text().split('/n')
+        try:
+            import pkg_resources
+            parsed = pkg_resources.parse_requirements(requirements)
+            requirements = [str(requirement) for requirement in parsed]
+        except ImportError:
+            pass
+        except Exception as e:
+            raise ValueError(
+                f'Requirements parser raised following error: {e}'
+            )
 
     # Environment
     if panel_version == 'auto':
@@ -214,7 +235,8 @@ def script_to_html(
     ]
 
     # Execution
-    code = '\n'.join([PRE, source, POST])
+    post_code = f'{POST};' if runtime == 'pyscript' else POST
+    code = '\n'.join([PRE, source, post_code])
     web_worker = None
     if css_resources is None:
         css_resources = []
@@ -224,8 +246,8 @@ def script_to_html(
         css_resources = []
         if css_resources == 'auto':
             css_resources = [PYSCRIPT_CSS]
-        pyenv = '\n'.join([f'- {req}' for req in reqs])
-        plot_script = f'<py-env>\n{pyenv}\n</py-env>\n<py-script>{code}</py-script>'
+        pyenv = ','.join([repr(req) for req in reqs])
+        plot_script = f'<py-config>\npackages = [{pyenv}]\n</py-config>\n<py-script>{code}</py-script>'
     else:
         if css_resources == 'auto':
             css_resources = []
@@ -235,7 +257,8 @@ def script_to_html(
             if js_resources == 'auto':
                 js_resources = []
             worker_handler = WORKER_HANDLER_TEMPLATE.render({
-                'name': name
+                'name': name,
+                'loading_spinner': config.loading_spinner
             })
             web_worker = WEB_WORKER_TEMPLATE.render({
                 'PYODIDE_URL': PYODIDE_URL,
@@ -304,20 +327,17 @@ def script_to_html(
     # Reset resources
     _settings.resources.unset_value()
 
-    # Destroy document
-    _cleanup_doc(document)
-
     return html, web_worker
 
 
 def convert_app(
     app: str,
     dest_path: str,
-    requirements: List[str] | Literal['auto'] = 'auto',
+    requirements: List[str] | Literal['auto'] | os.PathLike = 'auto',
     runtime: Runtimes = 'pyodide-worker',
     prerender: bool = True,
     manifest: str | None = None,
-    verbose: bool = True
+    verbose: bool = True,
 ):
     try:
         html, js_worker = script_to_html(
@@ -346,7 +366,7 @@ def convert_apps(
     dest_path: str | None = None,
     title: str | None = None,
     runtime: Runtimes = 'pyodide-worker',
-    requirements: List[str] | Literal['auto'] = 'auto',
+    requirements: List[str] | Literal['auto'] | os.PathLike = 'auto',
     prerender: bool = True,
     build_index: bool = True,
     build_pwa: bool = True,
@@ -366,8 +386,10 @@ def convert_apps(
         name for the application cache to ensure.
     runtime: 'pyodide' | 'pyscript' | 'pyodide-worker'
         The runtime to use for running Python in the browser.
-    requirements: 'auto' | List[str]
+    requirements: 'auto' | List[str] | os.PathLike
         The list of requirements to include (in addition to Panel).
+        By default automatically infers dependencies from imports
+        in the application. May also provide path to a requirements.txt
     prerender: bool
         Whether to pre-render the components so the page loads.
     build_index: bool

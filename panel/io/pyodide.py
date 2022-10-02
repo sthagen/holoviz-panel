@@ -22,7 +22,7 @@ from bokeh.protocol.messages.patch_doc import process_document_events
 from js import JSON
 
 from ..config import config
-from ..util import is_holoviews, isurl
+from ..util import edit_readonly, is_holoviews, isurl
 from . import resources
 from .document import MockSessionContext
 from .mime_render import WriteCallbackStream, exec_with_return, format_mime
@@ -143,7 +143,8 @@ def _link_docs(pydoc: Document, jsdoc: Any) -> None:
         The Javascript Bokeh Document instance to sync.
     """
     def jssync(event):
-        if (event.setter_id is not None and event.setter_id == 'python'):
+        setter_id = getattr(event, 'setter_id', None)
+        if (setter_id is not None and setter_id == 'python'):
             return
         json_patch = jsdoc.create_json_patch_string(pyodide.ffi.to_js([event]))
         pydoc.apply_json_patch(json.loads(json_patch), setter='js')
@@ -151,7 +152,8 @@ def _link_docs(pydoc: Document, jsdoc: Any) -> None:
     jsdoc.on_change(pyodide.ffi.create_proxy(jssync), pyodide.ffi.to_js(False))
 
     def pysync(event):
-        if event.setter is not None and event.setter == 'js':
+        setter = getattr(event, 'setter', None)
+        if setter is not None and setter == 'js':
             return
         json_patch, buffers = process_document_events([event], use_buffers=True)
         buffer_map = {}
@@ -183,7 +185,7 @@ def _link_docs_worker(doc: Document, dispatch_fn: Any, msg_id: str | None = None
         An optional message ID to pass through to the dispatch_fn.
     """
     def pysync(event):
-        if setter is not None and event.setter == setter:
+        if setter is not None and getattr(event, setter, None) == setter:
             return
         json_patch, buffers = process_document_events([event], use_buffers=True)
         buffer_map = {}
@@ -305,10 +307,27 @@ async def write(target: str, obj: Any) -> None:
     pydoc.unhold()
 
 def hide_loader() -> None:
+    """
+    Hides the global loading spinner.
+    """
     from js import document
 
     body = document.getElementsByTagName('body')[0]
     body.classList.remove("bk", "pn-loading", config.loading_spinner)
+
+def sync_location():
+    """
+    Syncs the JS window.location with the Panel Location component.
+    """
+    if not state.location:
+        return
+    from js import window
+    loc_string = JSON.stringify(window.location)
+    loc_data = json.loads(loc_string)
+    with edit_readonly(state.location):
+        state.location.param.update({
+            k: v for k, v in loc_data.items() if k in state.location.param
+        })
 
 async def write_doc(doc: Document | None = None) -> Tuple[str, str, str]:
     """
@@ -351,6 +370,7 @@ async def write_doc(doc: Document | None = None) -> Tuple[str, str, str]:
         views = await Bokeh.embed.embed_items(JSON.parse(docs_json), JSON.parse(render_items))
         jsdoc = views[0][0].model.document
         _link_docs(pydoc, jsdoc)
+        sync_location()
         hide_loader()
     return docs_json, render_items, root_ids
 
