@@ -39,17 +39,29 @@ os.environ['BOKEH_RESOURCES'] = 'cdn'
 if 'pandas' in sys.modules:
     import pandas
 
-    _read_csv_original = pandas.read_csv
-
-    def _read_csv(*args, **kwargs):
+    def _read_file(*args, **kwargs):
         if args and isurl(args[0]):
             args = (pyodide.http.open_url(args[0]),)+args[1:]
         elif isurl(kwargs.get('filepath_or_buffer')):
             kwargs['filepath_or_buffer'] = pyodide.http.open_url(kwargs['filepath_or_buffer'])
+        return args, kwargs
+
+    # Patch pandas.read_csv
+    _read_csv_original = pandas.read_csv
+    def _read_csv(*args, **kwargs):
+        args, kwargs = _read_file(*args, **kwargs)
         return _read_csv_original(*args, **kwargs)
     _read_csv.__doc__ = _read_csv_original.__doc__
-
     pandas.read_csv = _read_csv
+
+    # Patch pandas.read_json
+    _read_json_original = pandas.read_json
+    def _read_json(*args, **kwargs):
+        args, kwargs = _read_file(*args, **kwargs)
+        return _read_json_original(*args, **kwargs)
+    _read_json.__doc__ = _read_json_original.__doc__
+    pandas.read_json = _read_json
+
 
 def async_execute(func: Any):
     event_loop = asyncio.get_running_loop()
@@ -185,7 +197,7 @@ def _link_docs_worker(doc: Document, dispatch_fn: Any, msg_id: str | None = None
         An optional message ID to pass through to the dispatch_fn.
     """
     def pysync(event):
-        if setter is not None and getattr(event, setter, None) == setter:
+        if setter is not None and getattr(event, 'setter', None) == setter:
             return
         json_patch, buffers = process_document_events([event], use_buffers=True)
         buffer_map = {}
