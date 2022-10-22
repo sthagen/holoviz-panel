@@ -1254,7 +1254,7 @@ class Tabulator(BaseTable):
             for f in filters:
                 mask &= f
             if self._edited_indexes:
-                edited_mask = (df['index'].isin(self._edited_indexes))
+                edited_mask = (df[self.value.index.name or 'index'].isin(self._edited_indexes))
                 mask = mask | edited_mask
             df = df[mask]
         data = {
@@ -1290,7 +1290,7 @@ class Tabulator(BaseTable):
         return len(self._processed)
 
     def _get_style_data(self, recompute=True):
-        if self.value is None or self.style is None:
+        if self.value is None or self.style is None or self.value.empty:
             return {}
         df = self._processed
         if recompute:
