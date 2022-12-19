@@ -21,7 +21,7 @@ from contextvars import ContextVar
 from functools import partial, wraps
 from typing import (
     TYPE_CHECKING, Any, Callable, ClassVar, Coroutine, Dict,
-    Iterator as TIterator, List, Optional, Tuple, TypeVar, Union,
+    Iterator as TIterator, List, Optional, Tuple, Type, TypeVar, Union,
 )
 from urllib.parse import urljoin
 from weakref import WeakKeyDictionary
@@ -137,8 +137,10 @@ class _state(param.Parameterized):
     _admin_context = None
 
     # Jupyter communication
-    _comm_manager = _CommManager
+    _comm_manager: ClassVar[Type[_CommManager]] = _CommManager
+    _jupyter_kernel_context: ClassVar[bool] = False
     _kernels = {}
+    _ipykernels: ClassVar[WeakKeyDictionary[Document, Any]] = WeakKeyDictionary()
 
     # Locations
     _location: ClassVar[Location | None] = None # Global location, e.g. for notebook context
@@ -628,7 +630,7 @@ class _state(param.Parameterized):
         callback: Callable[[], None] | Coroutine[Any, Any, None]
            Callback that is executed when the application is loaded
         """
-        if self.curdoc is None:
+        if self.curdoc is None or self._is_pyodide:
             if self._thread_pool:
                 future = self._thread_pool.submit(partial(self.execute, callback, schedule=False))
                 future.add_done_callback(self._handle_future_exception)
