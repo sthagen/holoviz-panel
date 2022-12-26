@@ -112,7 +112,7 @@ install_requires = [
     'pyct >=0.4.4',
     'bleach',
     'setuptools >=42',
-    'typing_extensions'
+    'typing_extensions',
 ]
 
 _recommended = [
@@ -133,6 +133,7 @@ _tests = [
     'pytest-xdist',
     'pytest-cov',
     'pre-commit',
+    'psutil',
     # Libraries tested in unit tests
     'folium',
     'ipympl',
@@ -148,6 +149,7 @@ _tests = [
     # Added lxml temporarily as installing pyechars or idom on Python 3.11
     # via pip tries to build it and fails. To be removed.
     'lxml',
+    'numpy <1.24', # Avoid VTK test fail
 ]
 
 _ui = [
