@@ -13,6 +13,7 @@ from typing import (
 import numpy as np
 import param
 
+from bokeh.model import Model
 from bokeh.models import ColumnDataSource
 from bokeh.models.widgets.tables import (
     AvgAggregator, CellEditor, CellFormatter, CheckboxEditor, DataCube,
@@ -43,7 +44,6 @@ if TYPE_CHECKING:
         DataFrameType = TypeVar('DataFrameType')
 
     from bokeh.document import Document
-    from bokeh.model import Model
     from bokeh.models.sources import DataDict
     from pyviz_comms import Comm
 
@@ -110,6 +110,9 @@ class BaseTable(ReactiveData, Widget):
         self._filters = []
         self._index_mapping = {}
         super().__init__(value=value, **params)
+        self.param.watch(self._setup_on_change, ['editors', 'formatters'])
+        self.param.trigger('editors')
+        self.param.trigger('formatters')
 
     @param.depends('value', watch=True, on_init=True)
     def _compute_renamed_cols(self):
@@ -230,17 +233,44 @@ class BaseTable(ReactiveData, Widget):
             columns.append(column)
         return columns
 
+    def _setup_on_change(self, event: param.parameterized.Event):
+        old, new = event.old, event.new
+        for model in (old if isinstance(old, dict) else {}).values():
+            if not isinstance(model, (CellEditor, CellFormatter)):
+                continue
+            change_fn = self._editor_change if isinstance(model, CellEditor) else self._formatter_change
+            for prop in (model.properties() - Model.properties()):
+                try:
+                    model.remove_on_change(prop, change_fn)
+                except ValueError:
+                    pass
+        for model in (new if isinstance(new, dict) else {}).values():
+            if not isinstance(model, (CellEditor, CellFormatter)):
+                continue
+            change_fn = self._editor_change if isinstance(model, CellEditor) else self._formatter_change
+            for prop in (model.properties() - Model.properties()):
+                model.on_change(prop, change_fn)
+
+    def _editor_change(self, attr: str, new: Any, old: Any):
+        self.param.trigger('editors')
+
+    def _formatter_change(self, attr: str, new: Any, old: Any):
+        self.param.trigger('formatters')
+
+    def _update_index_mapping(self):
+        if self._processed is None or isinstance(self._processed, list) and not self._processed:
+            self._index_mapping = {}
+            return
+        self._index_mapping = {
+            i: index
+            for i, index in enumerate(self._processed.index)
+        }
+
     @updating
     def _update_cds(self, *events: param.parameterized.Event):
         old_processed = self._processed
         self._processed, data = self._get_data()
-        if self._processed is not None and not (isinstance(self._processed, list) and not self._processed):
-            self._index_mapping = {
-                i: index
-                for i, index in enumerate(self._processed.index)
-            }
-        else:
-            self._index_mapping = {}
+        self._update_index_mapping()
         # If there is a selection we have to compute new index
         if self.selection and old_processed is not None:
             indexes = list(self._processed.index)
@@ -1155,7 +1185,7 @@ class Tabulator(BaseTable):
             nrows = self.page_size
             event.row = event.row+(self.page-1)*nrows
 
-        idx = self._index_mapping[event.row]
+        idx = self._index_mapping.get(event.row, event.row)
         iloc = self.value.index.get_loc(idx)
         self._validate_iloc(idx, iloc)
         event.row = iloc
@@ -1405,6 +1435,7 @@ class Tabulator(BaseTable):
         super()._stream(stream, rollover)
         self._update_style()
         self._update_selectable()
+        self._update_index_mapping()
 
     def stream(self, stream_value, rollover=None, reset_index=True, follow=True):
         for ref, (model, _) in self._models.items():

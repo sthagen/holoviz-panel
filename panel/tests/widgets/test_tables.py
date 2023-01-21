@@ -1883,6 +1883,23 @@ def test_tabulator_pagination_remote_cell_click_event():
                 table._process_event(event)
                 assert values[-1] == (col, (p*2)+row, data[col].iloc[(p*2)+row])
 
+def test_tabulator_pagination_remote_cell_click_event_with_stream():
+    df = makeMixedDataFrame()
+    table = Tabulator(df, pagination='remote', page_size=2)
+
+    values = []
+    table.on_click(lambda e: values.append((e.column, e.row, e.value)))
+
+    data = df.reset_index()
+    for col in data.columns:
+        for p in range(len(df)//2):
+            table.page = p+1
+            for row in range(2):
+                event = CellClickEvent(model=None, column=col, row=row)
+                table._process_event(event)
+                assert values[-1] == (col, (p*2)+row, data[col].iloc[(p*2)+row])
+            table.stream(pd.DataFrame([(5.0, 0, 'foo6', df.D.iloc[-1])], columns=df.columns, index=[5]))
+
 def test_tabulator_cell_click_event_error_duplicate_index():
     df = pd.DataFrame(data={'A': [1, 2]}, index=['a', 'a'])
     table = Tabulator(df, sorters=[{'field': 'A', 'sorter': 'number', 'dir': 'desc'}])
@@ -1919,6 +1936,32 @@ def test_tabulator_styling_empty_dataframe():
         }
     }
 
+def test_tabulator_editor_property_change(dataframe, document, comm):
+    editor = SelectEditor(options=['A', 'B', 'C'])
+    table = Tabulator(dataframe, editors={'str': editor})
+    model = table.get_root(document, comm)
+
+    model_editor = model.columns[-1].editor
+    assert isinstance(model_editor, SelectEditor) is not editor
+    assert isinstance(model_editor, SelectEditor)
+    assert model_editor.options == editor.options
+
+    editor.options = ['D', 'E']
+    model_editor = model.columns[-1].editor
+    assert model_editor.options == editor.options
+
+def test_tabulator_formatter_update(dataframe, document, comm):
+    formatter = NumberFormatter(format='0.0000')
+    table = Tabulator(dataframe, formatters={'float': formatter})
+    model = table.get_root(document, comm)
+    model_formatter = model.columns[2].formatter
+    assert model_formatter is not formatter
+    assert isinstance(model_formatter, NumberFormatter)
+    assert model_formatter.format == formatter.format
+
+    formatter.format = '0.0'
+    model_formatter = model.columns[2].formatter
+    assert model_formatter.format == formatter.format
 
 def test_tabulator_pandas_import():
     # Checks for: https://github.com/holoviz/panel/issues/4102
