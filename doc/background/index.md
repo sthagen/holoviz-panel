@@ -28,6 +28,13 @@ Explore the reasoning for each of Panel's APIs.
 Discover why Panel utilizes the Param library.
 :::
 
+:::{grid-item-card} {octicon}`sliders;2.5em;sd-mr-1` Widget Abbreviations for `Interact`
+:link: interact/interact_abbreviations
+:link-type: doc
+
+Learn about the abbreviations used to create widgets with Panel `interact`.
+:::
+
 :::{grid-item-card} {octicon}`git-compare;2.5em;sd-mr-1` Library Comparisons
 :link: comparisons
 :link-type: doc
@@ -40,6 +47,13 @@ Compare Panel with similar libraries.
 :link-type: doc
 
 An overview explaining how Panel communicates between Python and Javascript in different contexts, such as Jupyter, server environments and in exported files.
+:::
+
+:::{grid-item-card} {octicon}`repo-template;2.5em;sd-mr-1` Templates
+:link: templates/templates_overview
+:link-type: doc
+
+Learn about context for using Templates in Panel.
 :::
 
 
