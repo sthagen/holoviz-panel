@@ -1,5 +1,5 @@
 import * as p from "@bokehjs/core/properties"
-import { HTMLBox, HTMLBoxView } from "@bokehjs/models/layouts/html_box"
+import { HTMLBox, HTMLBoxView } from "./layout"
 
 const iconStarted = `<svg xmlns="http://www.w3.org/2000/svg" height="22px" style="vertical-align: middle;" fill="currentColor" class="bi bi-mic" viewBox="0 0 16 16">
   <path fill-rule="evenodd" d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
@@ -170,7 +170,7 @@ export class SpeechToTextView extends HTMLBoxView {
   render(): void {
     super.render()
     if (!this.model.button_hide)
-      this.el.appendChild(this.buttonEl)
+      this.shadow_el.appendChild(this.buttonEl)
   }
 }
 
@@ -209,28 +209,28 @@ export class SpeechToText extends HTMLBox {
 
   static __module__ = "panel.models.speech_to_text"
 
-  static init_SpeechToText(): void {
+  static {
     this.prototype.default_view = SpeechToTextView
 
-    this.define<SpeechToText.Props>(({Array, Boolean, Number, String}) => ({
-      start: [ Boolean, false   ],
-      stop: [ Boolean, false   ],
-      abort: [ Boolean, false   ],
-      grammars: [Array(String), []],
-      lang: [String, ""],
+    this.define<SpeechToText.Props>(({Any, Array, Boolean, Number, String}) => ({
+      start: [ Boolean, false ],
+      stop: [ Boolean, false ],
+      abort: [ Boolean, false ],
+      grammars: [ Array(String), [] ],
+      lang: [ String, '' ],
       continuous: [ Boolean,   false ],
       interim_results: [ Boolean,   false ],
       max_alternatives: [ Number,   1 ],
-      service_uri: [String, ],
+      service_uri: [ String, '' ],
       started: [ Boolean,   false ],
       audio_started: [ Boolean,   false ],
       sound_started: [ Boolean,   false ],
       speech_started: [ Boolean,   false ],
-      button_type: [String, 'light'],
+      button_type: [ String, 'light' ],
       button_hide: [ Boolean,   false ],
       button_not_started: [ String,   '' ],
       button_started: [ String,   '' ],
-      results: [ Array(String), []],
+      results: [ Array(Any), [] ],
     }))
   }
 }

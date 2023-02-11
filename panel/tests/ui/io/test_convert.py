@@ -89,6 +89,12 @@ if pn.state._is_pyodide:
     raise RuntimeError('This app is broken')
 """
 
+config_app = """
+import panel as pn
+pn.config.raw_css = ['body { background-color: blue; }']
+pn.Row('Output').servable();
+"""
+
 
 def write_app(app):
     """
@@ -172,11 +178,11 @@ def test_pyodide_test_error_handling_worker(page, launch_app):
 def test_pyodide_test_convert_button_app(page, runtime, launch_app):
     msgs = wait_for_app(launch_app, button_app, page, runtime)
 
-    expect(page.locator(".bk.bk-clearfix")).to_have_text('0')
+    expect(page.locator(".bk-clearfix")).to_have_text('0')
 
-    page.click('.bk.bk-btn')
+    page.click('.bk-btn')
 
-    expect(page.locator(".bk.bk-clearfix")).to_have_text('1')
+    expect(page.locator(".bk-clearfix")).to_have_text('1')
 
     assert [msg for msg in msgs if msg.type == 'error' and 'favicon' not in msg.location['url']] == []
 
@@ -184,20 +190,27 @@ def test_pyodide_test_convert_button_app(page, runtime, launch_app):
 def test_pyodide_test_convert_slider_app(page, runtime, launch_app):
     msgs = wait_for_app(launch_app, slider_app, page, runtime)
 
-    expect(page.locator(".bk.bk-clearfix")).to_have_text('0.0')
+    expect(page.locator(".bk-clearfix")).to_have_text('0.0')
 
     page.click('.noUi-handle')
     page.keyboard.press('ArrowRight')
 
-    expect(page.locator(".bk.bk-clearfix")).to_have_text('0.1')
+    expect(page.locator(".bk-clearfix")).to_have_text('0.1')
 
     assert [msg for msg in msgs if msg.type == 'error' and 'favicon' not in msg.location['url']] == []
+
+@pytest.mark.parametrize('runtime', ['pyodide', 'pyscript', 'pyodide-worker'])
+def test_pyodide_test_convert_custom_config(page, runtime, launch_app):
+    wait_for_app(launch_app, config_app, page, runtime)
+
+    assert page.locator("body").evaluate("""(element) =>
+        window.getComputedStyle(element).getPropertyValue('background-color')""") == 'rgb(0, 0, 255)'
 
 @pytest.mark.parametrize('runtime', ['pyodide', 'pyodide-worker'])
 def test_pyodide_test_convert_tabulator_app(page, runtime, launch_app):
     msgs = wait_for_app(launch_app, tabulator_app, page, runtime)
 
-    page.click('.bk.bk-btn')
+    page.click('.bk-btn')
 
     time.sleep(1)
 
