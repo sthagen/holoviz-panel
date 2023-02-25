@@ -12,6 +12,7 @@ from typing import (
 
 import param
 
+from bokeh.models import ImportedStyleSheet
 from bokeh.models.layouts import (
     GridBox as _BkGridBox, TabPanel as _BkTabPanel, Tabs as _BkTabs,
 )
@@ -147,13 +148,35 @@ class PaneBase(Reactive):
             self.param.watch(self._sync_layoutable, list(Layoutable.param)),
             self.param.watch(self._update_pane, self._rerender_params)
         ])
+        self._sync_layoutable()
 
     def _sync_layoutable(self, *events: param.parameterized.Event):
-        kwargs = {
-            event.name: event.new for event in events
-            if event.name in Layoutable.param
-            and event.name not in ('background', 'css_classes', 'margin', 'name')
-        }
+        included = list(Layoutable.param)
+        skipped = ('background', 'css_classes', 'margin', 'name')
+        if events:
+            kwargs = {
+                event.name: event.new for event in events
+                if event.name in included and event.name not in skipped
+            }
+        else:
+            kwargs = {
+                k: v for k, v in self.param.values().items()
+                if k in included and k not in skipped
+            }
+        if self.margin:
+            margin = self.margin
+            if isinstance(margin, tuple):
+                if len(margin) == 2:
+                    t = b = margin[0]
+                    r = l = margin[1]
+                else:
+                    t, r, b, l = margin
+            else:
+                t = r = b = l = margin
+            if kwargs.get('width') is not None:
+                kwargs['width'] = kwargs['width'] + l + r
+            if kwargs.get('height') is not None:
+                kwargs['height'] = kwargs['height'] + t + b
         self.layout.param.update(kwargs)
 
     def _type_error(self, object):
@@ -448,6 +471,11 @@ class ModelPane(PaneBase):
     def _process_param_change(self, params):
         if 'object' in params:
             params.update(self._transform_object(params.pop('object')))
+        if self._bokeh_model is not None and 'stylesheets' in params:
+            css = getattr(self._bokeh_model, '__css__', [])
+            params['stylesheets'] = [
+                ImportedStyleSheet(url=ss) for ss in css
+            ] + params['stylesheets']
         return super()._process_param_change(params)
 
 
