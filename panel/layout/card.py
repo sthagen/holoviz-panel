@@ -64,8 +64,6 @@ class Card(Column):
     title_css_classes = param.List(['card-title'], doc="""
         CSS classes to apply to the header title.""")
 
-    margin = param.Parameter(default=5)
-
     title = param.String(doc="""
         A title to be displayed in the Card header, will be overridden
         by the header if defined.""")
@@ -130,5 +128,5 @@ class Card(Column):
         objects = super()._get_objects(model, old_objects, doc, root, comm)
         return [header]+objects
 
-    def _compute_sizing_mode(self, children, sizing_mode):
-        return super()._compute_sizing_mode(children[1:], sizing_mode)
+    def _compute_sizing_mode(self, children, sizing_mode, styles):
+        return super()._compute_sizing_mode(children[1:], sizing_mode, styles)
