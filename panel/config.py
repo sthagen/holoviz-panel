@@ -124,13 +124,6 @@ class _config(_base_config):
     exception_handler = param.Callable(default=None, doc="""
         General exception handler for events.""")
 
-    layout_compatibility = param.Boolean(default=True, doc="""
-        Enables the layout compatibility mode. This mode aims to provide
-        backward compatibility for layouts to behave like they did before
-        version 1. When a sizing_mode is incorrectly defined according to
-        the new layout modes a warning will be raised. The compatibility
-        mode will be disabled by default starting in v1.1.0""")
-
     load_entry_points = param.Boolean(default=True, doc="""
         Load entry points from external packages.""")
 
@@ -557,7 +550,8 @@ class panel_extension(_pyviz_extension):
         'terminal': 'panel.models.terminal',
         'tabulator': 'panel.models.tabulator',
         'texteditor': 'panel.models.quill',
-        'jsoneditor': 'panel.models.jsoneditor'
+        'jsoneditor': 'panel.models.jsoneditor',
+        'vizzu': 'panel.models.vizzu'
     }
 
     # Check whether these are loaded before rendering (if any item
@@ -786,12 +780,13 @@ class panel_extension(_pyviz_extension):
             )
 
     def _load_entry_points(self):
-        ''' Load entry points from external packages
-        Import is performed here so any importlib/pkg_resources
+        """
+        Load entry points from external packages.
+        Import is performed here, so any importlib
         can be easily bypassed by switching off the configuration flag.
-        also, no reason to waste time on importing this module
-        if it wont be used.
-        '''
+        Also, there is no reason to waste time importing this module
+        if it won't be used.
+        """
         from .entry_points import load_entry_points
         load_entry_points('panel.extension')
 
