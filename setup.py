@@ -196,12 +196,13 @@ extras_require = {
         'ipyvuetify',
         'reacton',
         'scikit-image',
+        'fastparquet'
     ],
     'tests': _tests,
     'recommended': _recommended,
     'doc': _recommended + [
         'nbsite >=0.8.0rc7',
-        'pydata-sphinx-theme ==0.9.0',
+        'pydata-sphinx-theme ==0.13.3',
         'sphinx-copybutton',
         'sphinx-design',
     ],
