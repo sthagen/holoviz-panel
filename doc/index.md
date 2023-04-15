@@ -101,11 +101,11 @@ Walks you through setting up your Python environment, installing Panel into it a
 A more hands on tour taking you through the process of loading some data, displaying it and then building an application around it with some of the rich features that Panel supports.
 :::
 
-:::{grid-item-card} {octicon}`book;2.5em;sd-mr-1` User Guide
-:link: user_guide/index
+:::{grid-item-card} {octicon}`book;2.5em;sd-mr-1` How-to
+:link: how_to/index
 :link-type: doc
 
-For a more in-depth guide through a range of topics, starting from the various APIs of Panel, through to building custom components and authentication visit our user guide.
+How-to guides provide step by step recipes for solving essential problems and tasks that arise during your work.
 :::
 
 ::::
@@ -119,6 +119,7 @@ The Panel project is grateful for the sponsorship by the organizations and compa
 ::::{grid} 2
 
 :::{grid-item-card}
+:class-body: sponsor-logo
 :link: https://www.anaconda.com/
 :link-type: url
 :text-align: center
@@ -133,6 +134,7 @@ alt: Anaconda Logo
 
 
 :::{grid-item-card}
+:class-body: sponsor-logo
 :link: https://www.blackstone.com/the-firm/
 :link-type: url
 :text-align: center
@@ -146,6 +148,7 @@ alt: Blackstone Logo
 :::
 
 :::{grid-item-card}
+:class-body: sponsor-logo
 :link: https://numfocus.org/
 :link-type: url
 :text-align: center
@@ -159,6 +162,7 @@ alt: NumFOCUS Logo
 :::
 
 :::{grid-item-card}
+:class-body: sponsor-logo
 :link: https://quansight.com/
 :link-type: url
 :text-align: center
@@ -187,7 +191,7 @@ background/index
 reference/index
 api/index
 FAQ
-about/index.rst
+about/index
 ```
 
 ```{toctree}
@@ -197,5 +201,4 @@ about/index.rst
 :caption: FOR DEVELOPERS
 
 developer_guide/index
-releases
 ```

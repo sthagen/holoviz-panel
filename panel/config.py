@@ -94,7 +94,7 @@ class _config(_base_config):
     >>> pn.config.loading_spinner = 'bar'
     """
 
-    admin_plugins = param.List([], item_type=tuple, doc="""
+    admin_plugins = param.List(default=[], item_type=tuple, doc="""
         A list of tuples containing a title and a function that returns
         an additional panel to be rendered into the admin page.""")
 
@@ -538,21 +538,22 @@ class panel_extension(_pyviz_extension):
     _loaded = False
 
     _imports = {
-        'katex': 'panel.models.katex',
-        'mathjax': 'panel.models.mathjax',
-        'plotly': 'panel.models.plotly',
-        'deckgl': 'panel.models.deckgl',
-        'vega': 'panel.models.vega',
-        'vtk': 'panel.models.vtk',
         'ace': 'panel.models.ace',
+        'codeeditor': 'panel.models.ace',
+        'deckgl': 'panel.models.deckgl',
         'echarts': 'panel.models.echarts',
         'ipywidgets': 'panel.io.ipywidget',
-        'perspective': 'panel.models.perspective',
-        'terminal': 'panel.models.terminal',
-        'tabulator': 'panel.models.tabulator',
-        'texteditor': 'panel.models.quill',
         'jsoneditor': 'panel.models.jsoneditor',
-        'vizzu': 'panel.models.vizzu'
+        'katex': 'panel.models.katex',
+        'mathjax': 'panel.models.mathjax',
+        'perspective': 'panel.models.perspective',
+        'plotly': 'panel.models.plotly',
+        'tabulator': 'panel.models.tabulator',
+        'terminal': 'panel.models.terminal',
+        'texteditor': 'panel.models.quill',
+        'vizzu': 'panel.models.vizzu',
+        'vega': 'panel.models.vega',
+        'vtk': 'panel.models.vtk'
     }
 
     # Check whether these are loaded before rendering (if any item
@@ -561,14 +562,15 @@ class panel_extension(_pyviz_extension):
     _globals = {
         'deckgl': ['deck'],
         'echarts': ['echarts'],
+        'gridstack': ['GridStack'],
         'katex': ['katex'],
         'mathjax': ['MathJax'],
         'plotly': ['Plotly'],
-        'vega': ['vega'],
-        'vtk': ['vtk'],
-        'terminal': ['Terminal', 'xtermjs'],
         'tabulator': ['Tabulator'],
-        'gridstack': ['GridStack']
+        'terminal': ['Terminal', 'xtermjs'],
+        'vega': ['vega'],
+        'vizzu': ['Vizzu'],
+        'vtk': ['vtk']
     }
 
     _loaded_extensions = []
