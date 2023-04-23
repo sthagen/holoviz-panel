@@ -207,6 +207,10 @@ class _state(param.Parameterized):
     # Locks
     _cache_locks: ClassVar[Dict[str, threading.Lock]] = {'main': threading.Lock()}
 
+    # Sessions
+    _sessions = {}
+    _session_key_funcs = {}
+
     def __repr__(self) -> str:
         server_info = []
         for server, panel, docs in self._servers.values():
@@ -731,6 +735,8 @@ class _state(param.Parameterized):
         if self._thread_pool is not None:
             self._thread_pool.shutdown(wait=False)
             self._thread_pool = None
+        self._sessions.clear()
+        self._session_key_funcs.clear()
 
     def schedule_task(
         self, name: str, callback: Callable[[], None], at: Tat =None,
