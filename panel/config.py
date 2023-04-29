@@ -116,6 +116,10 @@ class _config(_base_config):
     autoreload = param.Boolean(default=False, doc="""
         Whether to autoreload server when script changes.""")
 
+    basic_auth_template = param.Path(default=None, doc="""
+        A jinja2 template to override the default Basic Authentication
+        login page.""")
+
     browser_info = param.Boolean(default=True, doc="""
         Whether to request browser info from the frontend.""")
 
@@ -130,6 +134,11 @@ class _config(_base_config):
 
     global_loading_spinner = param.Boolean(default=False, doc="""
         Whether to add a global loading spinner for the whole application.""")
+
+    layout_compatibility = param.Selector(default='warn', objects=['warn', 'error'], doc="""
+        Provide compatibility for older layout specifications. Incompatible
+        specifications will triger warnings by default but can be set to error.
+        Compatibility to be set to error by default in Panel 1.1.""")
 
     load_entry_points = param.Boolean(default=True, doc="""
         Load entry points from external packages.""")
@@ -239,6 +248,10 @@ class _config(_base_config):
         Whenever an event arrives from the frontend it will be
         dispatched to the thread pool to be processed.""")
 
+    _basic_auth = param.ObjectSelector(
+        default=None, allow_None=True, objects=[], doc="""
+        Use Basic authentification.""")
+
     _oauth_provider = param.ObjectSelector(
         default=None, allow_None=True, objects=[], doc="""
         Select between a list of authentification providers.""")
@@ -276,7 +289,8 @@ class _config(_base_config):
         'admin_plugins', 'autoreload', 'comms', 'cookie_secret',
         'nthreads', 'oauth_provider', 'oauth_expiry', 'oauth_key',
         'oauth_secret', 'oauth_jwt_user', 'oauth_redirect_uri',
-        'oauth_encryption_key', 'oauth_extra_params', 'npm_cdn'
+        'oauth_encryption_key', 'oauth_extra_params', 'npm_cdn',
+        'layout_compatibility'
     ]
 
     _truthy = ['True', 'true', '1', True, 1]
@@ -458,6 +472,11 @@ class _config(_base_config):
         return None if nthreads is None else int(nthreads)
 
     @property
+    def basic_auth(self):
+        provider = os.environ.get('PANEL_BASIC_AUTH', self._oauth_provider)
+        return provider.lower() if provider else None
+
+    @property
     def oauth_provider(self):
         provider = os.environ.get('PANEL_OAUTH_PROVIDER', self._oauth_provider)
         return provider.lower() if provider else None
@@ -578,6 +597,7 @@ class panel_extension(_pyviz_extension):
     _globals = {
         'deckgl': ['deck'],
         'echarts': ['echarts'],
+        'floatpanel': ['jsPanel'],
         'gridstack': ['GridStack'],
         'katex': ['katex'],
         'mathjax': ['MathJax'],
@@ -738,7 +758,7 @@ class panel_extension(_pyviz_extension):
             load_notebook(config.inline)
         panel_extension._loaded = True
 
-        if config.browser_info:
+        if config.browser_info and state.browser_info:
             doc = Document()
             comm = state._comm_manager.get_server_comm()
             model = state.browser_info._render_model(doc, comm)

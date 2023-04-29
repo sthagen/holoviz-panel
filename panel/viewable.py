@@ -239,6 +239,35 @@ class Layoutable(param.Parameterized):
     __abstract = True
 
     def __init__(self, **params):
+        sizing_mode = params.get('sizing_mode')
+        if (sizing_mode in ('stretch_width', 'scale_width', 'stretch_both', 'scale_both') and
+            params.get('width') is not None):
+            error = (
+                f"Providing a width-responsive sizing_mode ({params['sizing_mode']!r}) "
+                "and a fixed width is not supported. Converting fixed width to min_width. "
+                "If you intended the component to be fully width-responsive remove the height"
+                "setting, otherwise change it to min_height."
+            )
+            if config.layout_compatibility == 'warn':
+                error += ' To error on the incorrect specification disable the config.layout_compatibility option.'
+                self.param.warning(error)
+            else:
+                raise ValueError(error)
+            params['min_width'] = params.pop('width')
+        if (sizing_mode in ('stretch_height', 'scale_height', 'stretch_both', 'scale_both') and
+            params.get('height') is not None):
+            error = (
+                f"Providing a height-responsive sizing_mode ({params['sizing_mode']!r}) "
+                "and a fixed height is not supported. Converting fixed height to min_height. "
+                "If you intended the component to be fully height-responsive remove the height "
+                "setting, otherwise change it to min_height."
+            )
+            if config.layout_compatibility == 'warn':
+                error += ' To error on the incorrect specification disable the config.layout_compatibility option.'
+                self.param.warning(error)
+            else:
+                raise ValueError(error)
+            params['min_height'] = params.pop('height')
         if (params.get('width') is not None and
             params.get('height') is not None and
             params.get('width_policy') is None and
@@ -355,8 +384,10 @@ class ServableMixin:
                     template.header.append(self)
             else:
                 self.server_doc(title=title, location=location) # type: ignore
-        elif state._is_pyodide:
-            from .io.pyodide import _get_pyscript_target, write
+        elif state._is_pyodide and 'pyodide_kernel' not in sys.modules:
+            from .io.pyodide import _IN_WORKER, _get_pyscript_target, write
+            if _IN_WORKER:
+                return self
             target = target or _get_pyscript_target()
             if target is not None:
                 asyncio.create_task(write(target, self))
@@ -667,8 +698,8 @@ class Viewable(Renderable, Layoutable, ServableMixin):
             return
 
         # Warning
-        prev = f'{type(self).name}(background={self.background!r})'
-        new = f'{type(self).name}(styles={{"background": {self.background!r}}}'
+        prev = f'{type(self).name}(..., background={self.background!r})'
+        new = f"{type(self).name}(..., styles={{'background': {self.background!r}}})"
         deprecated("1.1", prev, new)
 
         self.styles = dict(self.styles, background=self.background)
@@ -802,7 +833,7 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         """
         Prints a compositional repr of the class.
         """
-        deprecated('1.0', f'{type(self).__name__}.pprint', 'print')
+        deprecated('1.1', f'{type(self).__name__}.pprint', 'print')
         print(self)
 
     def select(
@@ -840,7 +871,7 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         port: int (optional, default=0)
           Allows specifying a specific port
         """
-        deprecated('1.0', f'{type(self).__name__}.app', 'panel.io.notebook.show_server')
+        deprecated('1.1', f'{type(self).__name__}.app', 'panel.io.notebook.show_server')
         return show_server(self, notebook_url, port)
 
     def embed(
