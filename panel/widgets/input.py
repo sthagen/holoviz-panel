@@ -480,7 +480,7 @@ class DatetimeRangePicker(_DatetimePickerBase):
 
 class ColorPicker(Widget):
     """
-    The `ColorPicker` widget allows selecting a hexidecimal RGB color value
+    The `ColorPicker` widget allows selecting a hexadecimal RGB color value
     using the browser’s color-picking widget.
 
     Reference: https://panel.holoviz.org/reference/widgets/ColorPicker.html
@@ -495,6 +495,10 @@ class ColorPicker(Widget):
 
     value = param.Color(default=None, doc="""
         The selected color""")
+
+    width = param.Integer(default=52, allow_None=True, doc="""
+      Width of this component. If sizing_mode is set to stretch
+      or scale mode this will merely be used as a suggestion.""")
 
     _widget_type: ClassVar[Type[Model]] = _BkColorPicker
 

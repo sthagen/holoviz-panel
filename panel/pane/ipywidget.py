@@ -51,9 +51,9 @@ class IPyWidget(PaneBase):
         if isinstance(comm, JupyterComm) and not config.embed and "PANEL_IPYWIDGET" not in os.environ:
             IPyWidget = _BkIPyWidget
         else:
+            # panel.io.ipywidgets MUST be loaded before ipywidgets_bokeh
+            from ..io.ipywidget import _get_ipywidgets, _on_widget_constructed # isort: skip
             from ipywidgets_bokeh.widget import IPyWidget
-
-            from ..io.ipywidget import _get_ipywidgets, _on_widget_constructed
 
             # Ensure all widgets are initialized
             for w in _get_ipywidgets().values():
@@ -106,6 +106,8 @@ class Reacton(IPyWidget):
     def _get_ipywidget(
         self, obj, doc: Document, root: Model, comm: Optional[Comm], **kwargs
     ):
+        if not isinstance(comm, JupyterComm) or "PANEL_IPYWIDGET" in os.environ:
+            from ..io.ipywidget import Widget  # noqa
         import reacton
         widget, rc = reacton.render(obj)
         self._rcs[root.ref['id']] = rc

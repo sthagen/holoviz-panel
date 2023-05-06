@@ -17,10 +17,10 @@ PANEL_BASE = HERE.parent.parent
 EXAMPLES_DIR = PANEL_BASE / 'examples'
 LITE_FILES = PANEL_BASE / 'lite' / 'files'
 DOC_DIR = PANEL_BASE / 'doc'
-BASE_DEPENDENCIES = ["panel", "pyodide-http"]
+BASE_DEPENDENCIES = ['panel', 'pyodide-http']
 
 # Add piplite command to notebooks
-with open(HERE / "generate_panelite_content.json", "r", encoding="utf8") as file:
+with open(DOC_DIR / 'pyodide_dependencies.json', encoding='utf8') as file:
     DEPENDENCIES = json.load(file)
 
 class DependencyNotFound(Exception):
@@ -35,11 +35,11 @@ def _get_dependencies(nbpath: pathlib.Path):
     dependencies = DEPENDENCIES.get(key, [])
     if dependencies is None:
         return []
-    # Temporary patches
-    if "hvplot" in dependencies:
-        dependencies.append("holoviews")
-    if "holoviews" in dependencies:
-        dependencies[dependencies.index("holoviews")] = "holoviews==1.16.0a5"
+    # Temporary patch for HoloViews
+    if any('holoviews' in req for req in dependencies):
+        reqs = ['holoviews>=1.16.0a7' if 'holoviews' in req else req for req in dependencies]
+    elif any('hvplot' in req for req in dependencies):
+        dependencies.insert(0, 'holoviews>=1.16.0a7')
     return BASE_DEPENDENCIES + dependencies
 
 def _to_piplite_install_code(dependencies):
@@ -78,11 +78,11 @@ def _get_info_markdown_cell(nbpath):
         source = f"""<div class="alert alert-block alert-danger">
 This notebook is not expected to run successfully in <em>Panelite</em>. It has the following known issues: {issues_str}.
 
-Panelite is powered by young technologies like <a href="https://pyodide.org/en/stable/">Pyodide</a> and <a href="https://jupyterlite.readthedocs.io/en/latest/">Jupyterlite</a>. Panelite <a href="https://github.com/holoviz/panel/issues/4416">does not work well in Edge</a>. If you experience other issues, please <a href="https://github.com/holoviz/panel/issues">report them</a>.
+Panelite is powered by young technologies like <a href="https://pyodide.org/en/stable/">Pyodide</a> and <a href="https://jupyterlite.readthedocs.io/en/latest/">Jupyterlite</a>. Some browsers may be poorly supported (e.g. mobile or 32-bit versions). If you experience other issues, please <a href="https://github.com/holoviz/panel/issues">report them</a>.
 </div>"""
     else:
         source = """<div class="alert alert-block alert-success">
-<em>Panelite</em> is powered by young technologies like <a href="https://pyodide.org/en/stable/">Pyodide</a> and <a href="https://jupyterlite.readthedocs.io/en/latest/">Jupyterlite</a>. Panelite <a href="https://github.com/holoviz/panel/issues/4416">does not work well in Edge</a>. If you experience issues, please <a href="https://github.com/holoviz/panel/issues">report them</a>.
+<em>Panelite</em> is powered by young technologies like <a href="https://pyodide.org/en/stable/">Pyodide</a> and <a href="https://jupyterlite.readthedocs.io/en/latest/">Jupyterlite</a>. Some browsers may be poorly supported (e.g. mobile or 32-bit versions). If you experience issues, please <a href="https://github.com/holoviz/panel/issues">report them</a>.
 </div>"""
     info = nbformat.v4.new_markdown_cell(source=source)
     del info['id']

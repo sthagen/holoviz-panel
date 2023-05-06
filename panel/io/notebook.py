@@ -89,7 +89,10 @@ DOC_NB_JS: Template = _env.get_template("doc_nb_js.js")
 AUTOLOAD_NB_JS: Template = _env.get_template("autoload_panel_js.js")
 NB_TEMPLATE_BASE: Template = _env.get_template('nb_template.html')
 
-def _autoload_js(bundle, configs, requirements, exports, skip_imports, ipywidget, load_timeout=5000):
+def _autoload_js(
+    *, bundle, configs, requirements, exports, skip_imports, ipywidget,
+    reloading=False, load_timeout=5000
+):
     config = {'packages': {}, 'paths': {}, 'shim': {}}
     for conf in configs:
         for key, c in conf.items():
@@ -97,12 +100,14 @@ def _autoload_js(bundle, configs, requirements, exports, skip_imports, ipywidget
     return AUTOLOAD_NB_JS.render(
         bundle    = bundle,
         force     = True,
+        reloading = reloading,
         timeout   = load_timeout,
         config    = config,
         requirements = requirements,
         exports   = exports,
         skip_imports = skip_imports,
-        ipywidget = ipywidget
+        ipywidget = ipywidget,
+        version = bokeh.__version__
     )
 
 def html_for_render_items(docs_json, render_items, template=None, template_variables={}):
@@ -295,6 +300,17 @@ class JupyterCommManagerBinary(_JupyterCommManager):
 
     client_comm = JupyterCommJSBinary
 
+
+class Mimebundle:
+    """
+    Wraps a generated mimebundle.
+    """
+    def __init__(self, mimebundle):
+        self._mimebundle = mimebundle
+
+    def _repr_mimebundle_(self, include=None, exclude=None):
+        return self._mimebundle
+
 #---------------------------------------------------------------------
 # Public API
 #---------------------------------------------------------------------
@@ -324,7 +340,11 @@ def block_comm() -> Iterator:
     finally:
         state._hold = False
 
-def load_notebook(inline: bool = True, load_timeout: int = 5000) -> None:
+def load_notebook(
+    inline: bool = True,
+    reloading: bool = False,
+    load_timeout: int = 5000
+) -> None:
     from IPython.display import publish_display_data
 
     resources = INLINE if inline and not state._is_pyodide else CDN
@@ -333,11 +353,21 @@ def load_notebook(inline: bool = True, load_timeout: int = 5000) -> None:
     nb_endpoint = not state._is_pyodide
     resources = Resources.from_bokeh(resources, notebook=nb_endpoint)
     try:
-        bundle = bundle_resources(None, resources, notebook=nb_endpoint)
+        bundle = bundle_resources(
+            None, resources, notebook=nb_endpoint, reloading=reloading
+        )
         configs, requirements, exports, skip_imports = require_components()
         ipywidget = 'ipywidgets_bokeh' in sys.modules
-        bokeh_js = _autoload_js(bundle, configs, requirements, exports,
-                                skip_imports, ipywidget, load_timeout)
+        bokeh_js = _autoload_js(
+            bundle=bundle,
+            configs=configs,
+            requirements=requirements,
+            exports=exports,
+            skip_imports=skip_imports,
+            ipywidget=ipywidget,
+            reloading=reloading,
+            load_timeout=load_timeout
+        )
     finally:
         if user_resources:
             settings.resources = prev_resources
@@ -351,7 +381,7 @@ def load_notebook(inline: bool = True, load_timeout: int = 5000) -> None:
     bokeh.io.notebook.curstate().output_notebook()
 
     # Publish comm manager
-    CSS = (PANEL_DIR / '_templates' / 'jupyter.css').read_text()
+    CSS = (PANEL_DIR / '_templates' / 'jupyter.css').read_text(encoding='utf-8')
     JS = '\n'.join([PYVIZ_PROXY, _JupyterCommManager.js_manager, nb_mime_js])
     publish_display_data(data={LOAD_MIME: JS, 'application/javascript': JS})
     publish_display_data(data={'text/html': f'<style>{CSS}</style>'})
@@ -405,7 +435,7 @@ def show_server(panel: Any, notebook_url: str, port: int = 0) -> 'Server':
     })
     return server
 
-def show_embed(
+def render_embed(
     panel, max_states: int = 1000, max_opts: int = 3, json: bool = False,
     json_prefix: str = '', save_path: str = './', load_path: Optional[str] = None,
     progress: bool = True, states: Dict[Widget, List[Any]] = {}
@@ -435,8 +465,6 @@ def show_embed(
     states: dict (default={})
       A dictionary specifying the widget values to embed for each widget
     """
-    from IPython.display import publish_display_data
-
     from ..config import config
 
     doc = Document()
@@ -446,7 +474,11 @@ def show_embed(
         embed_state(panel, model, doc, max_states, max_opts,
                     json, json_prefix, save_path, load_path, progress,
                     states)
-    publish_display_data(*render_model(model))
+    return Mimebundle(render_model(model))
+
+def show_embed(panel, *args, **kwargs):
+    from IPython.display import publish_display_data
+    return publish_display_data(render_embed(panel, *args, **kwargs))
 
 def ipywidget(obj: Any, doc=None, **kwargs: Any):
     """

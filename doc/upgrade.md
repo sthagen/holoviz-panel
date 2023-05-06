@@ -32,7 +32,7 @@ Now let us explore what changed in this release. In the past, the behavior of a 
 
 - If a child is responsive in width then the layout should also be responsive in width (unless a fixed `width` has been).
 - If a container is vertical (e.g. a `Column`) or supports responsive reflowing (e.g. a `FlexBox`) and a child is responsive in height then the container should also be height-responsive (unless a fixed `height` is set).
-- If a container is horizontal (e.g. a `Row`) and all children are responsive in height then the container should also be height-responsive. This behavior is assymetrical with width because there isn't always vertical space to expand into and it is better for the component to match the height of the other children.
+- If a container is horizontal (e.g. a `Row`) and all children are responsive in height then the container should also be height-responsive. This behavior is asymmetrical with width because there isn't always vertical space to expand into and it is better for the component to match the height of the other children.
 - If any children declare a fixed `width` or `height` then the container will inherit these as `min_width` and `min_height` settings to ensure that sufficient space is allocated.
 
 These very explicit rules ensure consistent behavior in most cases, however it is always best to be explicit and declare the sizes.
@@ -161,6 +161,12 @@ at the top of your application. The flipside of this is that if you call `pn.ext
 We recommend always declaring all required extensions at the top of your application.
 :::
 
+### Smaller changes
+
+- `Tabulator.frozen_rows` now respects the order of rows in the data instead of the order in which the `frozen_rows` were defined.
+- `Viewable.embed` now returns a `Mimebundle` object that can be rendered in a notebook but also in other contexts.
+- The `policy` argument toon `pn.cache` used to accept `'LIFO'` but instead implemented a `'FIFO'` policy. This has been fixed and the function now only accepts `'LRU'`, `'LIFO'`, and `'LFU'` policies.
+
 ### Deprecations
 
 The following changes have been deprecated; we will warn you and guide you on how to update them.
@@ -179,9 +185,3 @@ pn.pane.Markdown("# Hello", styles={'background': 'red'})
 #### `Ace` renamed to `CodeEditor`
 
 `pn.widgets.Ace()` has been renamed to `pn.widgets.CodeEditor()` to reflect better what the component does and not the implementation used.
-
-#### Miscellaneous
-
-Small behavior changes:
-
-`Tabulator.frozen_rows` now respects the order of rows in the data instead of the order in which the `frozen_rows` were defined.

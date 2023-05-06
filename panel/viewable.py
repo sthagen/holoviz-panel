@@ -21,7 +21,6 @@ import uuid
 from functools import partial
 from typing import (
     IO, TYPE_CHECKING, Any, Callable, ClassVar, Dict, List, Mapping, Optional,
-    TypeVar,
 )
 
 import param  # type: ignore
@@ -39,8 +38,8 @@ from .io.embed import embed_state
 from .io.loading import start_loading_spinner, stop_loading_spinner
 from .io.model import add_to_doc, patch_cds_msg
 from .io.notebook import (
-    JupyterCommManagerBinary as JupyterCommManager, ipywidget,
-    render_mimebundle, render_model, show_embed, show_server,
+    JupyterCommManagerBinary as JupyterCommManager, ipywidget, render_embed,
+    render_mimebundle, render_model, show_server,
 )
 from .io.save import save
 from .io.state import curdoc_locked, state
@@ -292,7 +291,6 @@ class Layoutable(param.Parameterized):
         super().__init__(**params)
 
 
-_Self = TypeVar('_Self', bound='ServableMixin')
 
 class ServableMixin:
     """
@@ -336,7 +334,7 @@ class ServableMixin:
     def servable(
         self, title: Optional[str] = None, location: bool | 'Location' = True,
         area: str = 'main', target: Optional[str] = None
-    ) -> _Self:
+    ) -> 'ServableMixin':
         """
         Serves the object or adds it to the configured
         pn.state.template if in a `panel serve` context, writes to the
@@ -628,7 +626,7 @@ class Renderable(param.Parameterized, MimeRenderMixin):
         Returns the bokeh model corresponding to this panel object
         """
         doc = init_doc(doc)
-        if self._design and comm:
+        if self._design and (comm or (state._is_pyodide and not doc.session_context)):
             wrapper = self._design._wrapper(self)
             if wrapper is self:
                 root = self._get_model(doc, comm=comm)
@@ -825,8 +823,11 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         -------
         Cloned Viewable object
         """
-        inherited = {p: v for p, v in self.param.values().items()
-                     if not self.param[p].readonly}
+        inherited = {
+            p: v for p, v in self.param.values().items()
+            if not self.param[p].readonly and v is not self.param[p].default
+            and not (v is None and not self.param[p].allow_None)
+        }
         return type(self)(**dict(inherited, **params))
 
     def pprint(self) -> None:
@@ -904,7 +905,7 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         states: dict (default={})
           A dictionary specifying the widget values to embed for each widget
         """
-        show_embed(
+        return render_embed(
             self, max_states, max_opts, json, json_prefix, save_path,
             load_path, progress, states
         )
