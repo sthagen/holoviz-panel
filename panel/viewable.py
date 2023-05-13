@@ -33,7 +33,7 @@ from pyviz_comms import Comm  # type: ignore
 from ._param import Align, Aspect, Margin
 from .config import config, panel_extension
 from .io import serve
-from .io.document import init_doc
+from .io.document import create_doc_if_none_exists, init_doc
 from .io.embed import embed_state
 from .io.loading import start_loading_spinner, stop_loading_spinner
 from .io.model import add_to_doc, patch_cds_msg
@@ -111,6 +111,11 @@ class Layoutable(param.Parameterized):
     stylesheets = param.List(default=[], doc="""
         List of stylesheets defined as URLs pointing to .css files
         or raw CSS defined as a string.""")
+
+    tags = param.List(default=[], doc="""
+        List of arbitrary tags to add to the component.
+        Can be useful for templating or for storing metadata on
+        the model.""")
 
     width = param.Integer(default=None, bounds=(0, None), doc="""
         The width of the component (in pixels). This can be either
@@ -386,7 +391,10 @@ class ServableMixin:
             from .io.pyodide import _IN_WORKER, _get_pyscript_target, write
             if _IN_WORKER:
                 return self
-            target = target or _get_pyscript_target()
+            try:
+                target = target or _get_pyscript_target()
+            except Exception:
+                target = None
             if target is not None:
                 asyncio.create_task(write(target, self))
         return self
@@ -625,7 +633,7 @@ class Renderable(param.Parameterized, MimeRenderMixin):
         -------
         Returns the bokeh model corresponding to this panel object
         """
-        doc = init_doc(doc)
+        doc = create_doc_if_none_exists(doc)
         if self._design and (comm or (state._is_pyodide and not doc.session_context)):
             wrapper = self._design._wrapper(self)
             if wrapper is self:
@@ -787,8 +795,6 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         else:
             location = None
 
-        from IPython.display import display
-
         doc = Document()
         comm = state._comm_manager.get_server_comm()
         model = self._render_model(doc, comm)
@@ -797,7 +803,9 @@ class Viewable(Renderable, Layoutable, ServableMixin):
 
         bundle, meta = self._render_mimebundle(model, doc, comm, location)
 
-        if config.console_output != 'disable':
+        if config.console_output != 'disable' and not state._is_pyodide:
+            from IPython.display import display
+
             ref = model.ref['id']
             handle = display(display_id=uuid.uuid4().hex)
             state._handles[ref] = (handle, [])
@@ -990,7 +998,18 @@ class Viewable(Renderable, Layoutable, ServableMixin):
         if title or doc.title == 'Bokeh Application':
             title = title or 'Panel Application'
             doc.title = title
-        model = self.get_root(doc)
+
+        if self._design:
+            wrapper = self._design._wrapper(self)
+            if wrapper is self:
+                model = self.get_root(doc)
+            else:
+                model = wrapper.get_root(doc)
+                ref = model.ref['id']
+                state._views[ref] = (wrapper, model, doc, None)
+        else:
+            model = self.get_root(doc)
+
         doc.on_session_destroyed(state._destroy_session)
         doc.on_session_destroyed(self._server_destroy) # type: ignore
         self._documents[doc] = model

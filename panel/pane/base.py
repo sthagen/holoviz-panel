@@ -18,9 +18,9 @@ from bokeh.models.layouts import (
 )
 
 from .._param import Margin
-from ..io import (
-    init_doc, push, state, unlocked,
-)
+from ..io.document import create_doc_if_none_exists, unlocked
+from ..io.notebook import push
+from ..io.state import state
 from ..layout.base import NamedListPanel, Panel, Row
 from ..links import Link
 from ..models import ReactiveHTML as _BkReactiveHTML
@@ -108,7 +108,7 @@ class PaneBase(Reactive):
         Defines the layout the model(s) returned by the pane will
         be placed in.""")
 
-    margin = Margin(default=5, doc="""
+    margin = Margin(default=(5, 10), doc="""
         Allows to create additional space around the component. May
         be specified as a two-tuple of the form (vertical, horizontal)
         or a four-tuple (top, right, bottom, left).""")
@@ -140,6 +140,8 @@ class PaneBase(Reactive):
     # List of parameters that trigger a rerender of the Bokeh model
     _rerender_params: ClassVar[List[str]] = ['object']
 
+    _skip_layoutable = ('background', 'css_classes', 'margin', 'name')
+
     __abstract = True
 
     def __init__(self, object=None, **params):
@@ -148,7 +150,10 @@ class PaneBase(Reactive):
         if (isinstance(applies, bool) and not applies) and self.object is not None:
             self._type_error(self.object)
 
-        kwargs = {k: v for k, v in params.items() if k in Layoutable.param}
+        kwargs = {
+            k: v for k, v in params.items() if k in Layoutable.param and
+            k not in self._skip_layoutable
+        }
         self.layout = self.default_layout(self, **kwargs)
         self._callbacks.extend([
             self.param.watch(self._sync_layoutable, list(Layoutable.param)),
@@ -165,16 +170,15 @@ class PaneBase(Reactive):
 
     def _sync_layoutable(self, *events: param.parameterized.Event):
         included = list(Layoutable.param)
-        skipped = ('background', 'css_classes', 'margin', 'name')
         if events:
             kwargs = {
                 event.name: event.new for event in events
-                if event.name in included and event.name not in skipped
+                if event.name in included and event.name not in self._skip_layoutable
             }
         else:
             kwargs = {
                 k: v for k, v in self.param.values().items()
-                if k in included and k not in skipped
+                if k in included and k not in self._skip_layoutable
             }
         if self.margin:
             margin = self.margin
@@ -275,6 +279,18 @@ class PaneBase(Reactive):
                 parent.tabs[index] = _BkTabPanel(**props)
             else:
                 parent.children[index] = new_model
+            layout_parent = self.layout._models.get(ref, [None])[0]
+            if parent is layout_parent:
+                parent.update(**self.layout._compute_sizing_mode(
+                    parent.children,
+                    dict(
+                        sizing_mode=self.layout.sizing_mode,
+                        styles=self.layout.styles,
+                        width=self.layout.width,
+                        min_width=self.layout.min_width,
+                        margin=self.layout.margin
+                    )
+                ))
 
         from ..io import state
         ref = root.ref['id']
@@ -380,7 +396,7 @@ class PaneBase(Reactive):
         -------
         Returns the bokeh model corresponding to this panel object
         """
-        doc = init_doc(doc)
+        doc = create_doc_if_none_exists(doc)
         if self._design and comm:
             wrapper = self._design._wrapper(self)
             if wrapper is self:
@@ -600,7 +616,7 @@ class ReplacementPane(PaneBase):
                 equal = False
             if not equal:
                 new_params[k] = v
-        old.set_param(**new_params)
+        old.param.update(**new_params)
 
     @classmethod
     def _update_from_object(cls, object: Any, old_object: Any, was_internal: bool, inplace: bool=False, **kwargs):
