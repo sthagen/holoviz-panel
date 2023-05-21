@@ -145,6 +145,7 @@ class PaneBase(Reactive):
     __abstract = True
 
     def __init__(self, object=None, **params):
+        self._object_changing = False
         super().__init__(object=object, **params)
         applies = self.applies(self.object, **(params if self._applies_kw else {}))
         if (isinstance(applies, bool) and not applies) and self.object is not None:
@@ -155,7 +156,7 @@ class PaneBase(Reactive):
             k not in self._skip_layoutable
         }
         self.layout = self.default_layout(self, **kwargs)
-        self._callbacks.extend([
+        self._internal_callbacks.extend([
             self.param.watch(self._sync_layoutable, list(Layoutable.param)),
             self.param.watch(self._update_pane, self._rerender_params)
         ])
@@ -169,16 +170,14 @@ class PaneBase(Reactive):
                 raise RuntimeError('Value is not valid.')
 
     def _sync_layoutable(self, *events: param.parameterized.Event):
-        included = list(Layoutable.param)
+        included = set(Layoutable.param) - set(self._skip_layoutable)
         if events:
             kwargs = {
-                event.name: event.new for event in events
-                if event.name in included and event.name not in self._skip_layoutable
+                event.name: event.new for event in events if event.name in included
             }
         else:
             kwargs = {
-                k: v for k, v in self.param.values().items()
-                if k in included and k not in self._skip_layoutable
+                k: v for k, v in self.param.values().items() if k in included
             }
         if self.margin:
             margin = self.margin
@@ -194,7 +193,8 @@ class PaneBase(Reactive):
                 kwargs['width'] = kwargs['width'] + l + r
             if kwargs.get('height') is not None:
                 kwargs['height'] = kwargs['height'] + t + b
-        self.layout.param.update(kwargs)
+        old_values = self.layout.param.values()
+        self.layout.param.update({k: v for k, v in kwargs.items() if v != old_values[k]})
 
     def _type_error(self, object):
         raise ValueError("%s pane does not support objects of type '%s'." %
@@ -232,6 +232,11 @@ class PaneBase(Reactive):
     def _synced_params(self) -> List[str]:
         ignored_params = ['name', 'default_layout', 'loading', 'background', 'stylesheets']+self._rerender_params
         return [p for p in self.param if p not in ignored_params and not p.startswith('_')]
+
+    def _param_change(self, *events: param.parameterized.Event) -> None:
+        if self._object_changing:
+            return
+        super()._param_change(*events)
 
     def _update_object(
         self, ref: str, doc: 'Document', root: Model, parent: Model, comm: Comm | None
@@ -545,7 +550,7 @@ class ReplacementPane(PaneBase):
         self._pane = panel(None)
         self._internal = True
         self._inner_layout = Row(self._pane, **{k: v for k, v in params.items() if k in Row.param})
-        self._callbacks.append(
+        self._internal_callbacks.append(
             self.param.watch(self._update_inner_layout, list(Layoutable.param))
         )
         self._sync_layout()
@@ -565,7 +570,7 @@ class ReplacementPane(PaneBase):
 
     @param.depends('_pane', '_pane.sizing_mode', '_pane.width_policy', '_pane.height_policy', watch=True)
     def _sync_layout(self):
-        if not hasattr(self, '_inner_layout'):
+        if not hasattr(self, '_inner_layout') or (self._pane is not None and getattr(self._pane, '_object_changing', False)):
             return
         self._inner_layout.param.update({
             k: v for k, v in self._pane.param.values().items()
@@ -632,7 +637,7 @@ class ReplacementPane(PaneBase):
                 for awatchers in pwatchers.values() for w in awatchers
             ]
             custom_watchers = [
-                wfn for wfn in watchers if wfn not in object._callbacks and
+                wfn for wfn in watchers if wfn not in object._internal_callbacks and
                 not hasattr(wfn.fn, '_watcher_name')
             ]
 
@@ -645,9 +650,25 @@ class ReplacementPane(PaneBase):
                     cls._recursive_update(old_object, i, old, new)
             elif isinstance(object, Reactive):
                 pvals = dict(old_object.param.values())
-                new_params = {k: v for k, v in object.param.values().items()
-                              if k != 'name' and v is not pvals[k]}
-                old_object.param.update(**new_params)
+                new_params = {}
+                for k, v in object.param.values().items():
+                    if k == 'name' or v is pvals[k]:
+                        continue
+                    try:
+                        equal = (v == pvals[k])
+                    except Exception:
+                        equal = False
+                    if not equal:
+                        new_params[k] = v
+                if isinstance(object, PaneBase):
+                    changing = any(p in old_object._rerender_params for p in new_params)
+                    old_object._object_changing = changing
+                    try:
+                        old_object.param.update(**new_params)
+                    finally:
+                        old_object._object_changing = False
+                else:
+                    old_object.param.update(**new_params)
             else:
                 old_object.object = object
         else:

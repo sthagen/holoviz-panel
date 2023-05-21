@@ -1,10 +1,216 @@
 # Releases
 
+## Version 1.0.2
+
+Date: 2023-05-19
+
+A micro-release in the 1.0.x series with a number of bug fixes and documentation tweaks. Many thanks to @jbednar and @philippjfr for contributing to this release.
+
+### Bug fixes
+
+- Ensure `Design` stylesheets are not replaced when updating component stylesheets ([#4883](https://github.com/holoviz/panel/pull/4883))
+- Ensure tooltips are rendered correctly as HTML ([#4887](https://github.com/holoviz/panel/pull/4887))
+- Fix loading of index page resources ([#4891](https://github.com/holoviz/panel/pull/4891))
+- Ensure `FloatPanel` can be rendered in classic notebooks ([#4892](https://github.com/holoviz/panel/pull/4892))
+- Attempt rendering output in notebooks even if not all resources have been initialized ([#4893](https://github.com/holoviz/panel/pull/4893))
+- Do not load large bokeh-mathjax bundle in notebooks by default ([#4895](https://github.com/holoviz/panel/pull/4895))
+- Make Fast template sidebar opening transition smoother ([#4898](https://github.com/holoviz/panel/pull/4898))
+- Ensure new items added to `Card` layout are rendered ([#4899](https://github.com/holoviz/panel/pull/4899))
+- Fix logo rendering in BasicAuth template ([#4900](https://github.com/holoviz/panel/pull/4900))
+
+### Documentation
+
+- Various documentation tweaks ([#4884](https://github.com/holoviz/panel/pull/4884), [#4888](https://github.com/holoviz/panel/pull/4888), [#4889](https://github.com/holoviz/panel/pull/4889), [#4901](https://github.com/holoviz/panel/pull/4901))
+- Update Vega/Altair reference notebook to use altair 5 APIs ([#4894](https://github.com/holoviz/panel/pull/4894))
+
+## Version 1.0.1
+
+Date: 2023-05-18
+
+A micro-release fixing some small issues discovered in Panel 1.0. Thank you to @droumis, @Hoxbro and @philippjfr for contributing fixes.
+
+### Bug fixes
+
+- Ensure `Reactive` objects wrapped in reactive are re-rendered correctly ([#4868](https://github.com/holoviz/panel/pull/4868))
+- Tweaks for Material `Design` component inset label styling ([#4877](https://github.com/holoviz/panel/pull/4877))
+- Ensure `SlidesTemplate` slides changes trigger updates in the `pn.state.location.hash` ([#4878](https://github.com/holoviz/panel/pull/4878))
+
+### Documentation
+
+- Fixes for cross-referencing and links in documentation ([#4870](https://github.com/holoviz/panel/pull/4870), [#4872](https://github.com/holoviz/panel/pull/4872), [#4874](https://github.com/holoviz/panel/pull/4874), [#4875](https://github.com/holoviz/panel/pull/4875))
+
 ## Version 1.0.0
 
-### Backward Compatibility
+Date: 2023-05-17
 
-- `Tabulator.frozen_rows` now respects the order of row in the data instead of the order in which the `frozen_rows` were defined (#4482)
+The Panel 1.0 release is finally here and it brings a huge number of improvements. The largest improvements in this release come from an upgrade from Bokeh 2.x to Bokeh 3.x. Bokeh overhauled its internal layout engine and stylesheet handling, making applications significantly more performant and customizable going forward.
+
+This release marks a huge step forward in the usability of Panel but is also just a first step in leveraging many of the new capabilities that the updated layout engine and design system affords. In the coming months we will continue to improve and polish the UI and UX and make it easier for you to extend Panel as needed.
+
+For now we want to thank the many people that contributed to this release either by contributing directly or by testing and providing feedback. Many thanks to the core contributors @MarcSkovMadsen, @Hoxbro, @maximlt, @jbednar, @droumis and @philippjfr and the outside contributors @ahuang11, @cdeil, @MridulS, @AndrewMaged814, @midnighter and @wendrul.
+
+### Major Features
+
+The three main features we want to highlight as part of this release are:
+
+- Add new and highly performant layout engine, addressing many performance and layout issues ([#4326](https://github.com/holoviz/panel/pull/4326), [#4463](https://github.com/holoviz/panel/pull/4463), [#4491](https://github.com/holoviz/panel/pull/4491), [#4503](https://github.com/holoviz/panel/pull/4503), [#4522](https://github.com/holoviz/panel/pull/4522), [#4690](https://github.com/holoviz/panel/pull/4690))
+- Add unified Design and Theme system ([#4413](https://github.com/holoviz/panel/pull/4413), [#4475](https://github.com/holoviz/panel/pull/4475), [#4466](https://github.com/holoviz/panel/pull/4466), [#4540](https://github.com/holoviz/panel/pull/4540), [#4548](https://github.com/holoviz/panel/pull/4548), [#4770](https://github.com/holoviz/panel/pull/4770), [#4792](https://github.com/holoviz/panel/pull/4792), [#4793](https://github.com/holoviz/panel/pull/4793), [#4801](https://github.com/holoviz/panel/pull/4801))
+- Implement support for passing parameters, widgets and bound functions by reference for simple and powerful reactivity ([#4495](https://github.com/holoviz/panel/pull/4495), [#4505](https://github.com/holoviz/panel/pull/4505), [#4603](https://github.com/holoviz/panel/pull/4603), [#4606](https://github.com/holoviz/panel/pull/4606))
+
+Some of the changes related to the new layout engine and design system will require small updates to your existing applications. To make this transition as smooth as possible we have provided an [upgrade/migration guide](https://panel.holoviz.org/panel/upgrade.html).
+
+### New Components
+
+This release also adds a number of exciting new components you can leverage in your applications:
+
+- Add `Swipe` layout ([#3007](https://github.com/holoviz/panel/pull/3007))
+- Add `Switch` widget ([[#4130](https://github.com/holoviz/panel/pull/4130)](https://github.com/holoviz/panel/pull/4130))
+- Add `Vizzu` pane ([#4226](https://github.com/holoviz/panel/pull/4226), [#4739](https://github.com/holoviz/panel/pull/4739))
+- Add `BrowserInfo` model to expose browser window and navigator APIs ([#4533](https://github.com/holoviz/panel/pull/4533))
+- Add `BasicAuth` provider for quick password based auth ([#4684](https://github.com/holoviz/panel/pull/4684))
+- Add `FloatPanel` layout ([#4707](https://github.com/holoviz/panel/pull/4707), [#4711](https://github.com/holoviz/panel/pull/4711))
+- Add a `SlidesTemplate` based on reveal.js to create interactive presentations ([#4798](https://github.com/holoviz/panel/pull/4798))
+
+### Major enhancements
+
+There are also a number of major enhancements in this release that we are very excited about:
+
+- Improved Markdown rendering ([#4688](https://github.com/holoviz/panel/pull/4688))
+- Add support for tooltips on widgets ([[#4130](https://github.com/holoviz/panel/pull/4130)](https://github.com/holoviz/panel/pull/4130), [#4621](https://github.com/holoviz/panel/pull/4621), [#4643](https://github.com/holoviz/panel/pull/4643))
+- Ensure `.ipynb` and `.md` based apps can be used as `--index` ([#4432](https://github.com/holoviz/panel/pull/4432))
+- Add support for selecting `format` and `encoding` for Matplotlib image output and implemented  responsive Image sizing ([#4514](https://github.com/holoviz/panel/pull/4514))
+- Add support for icons on `Button` ([#4797](https://github.com/holoviz/panel/pull/4797))
+- Add generic `Image` pane that auto-detects the image filetype ([#4551](https://github.com/holoviz/panel/pull/4551))
+- Add support for writing applications in Markdown ([#4602](https://github.com/holoviz/panel/pull/4602))
+- Improve support for inline resources for Jupyter ([#3013](https://github.com/holoviz/panel/pull/3013), [#4787](https://github.com/holoviz/panel/pull/4787))
+- Add ability to reuse sessions to speed up rendering ([#3679](https://github.com/holoviz/panel/pull/3679), [#4658](https://github.com/holoviz/panel/pull/4658))
+- Improve notebook resource and extension loading ([#4752](https://github.com/holoviz/panel/pull/4752))
+- Add ability to add global loading spinner to application(s) ([#4659](https://github.com/holoviz/panel/pull/4659))
+
+### Documentation
+
+The last major change we want to highlight is a complete overhaul of the documentation, moving from long and difficult-to-navigate user guides to distinct easily applied how-to guides along with separate, longer explanation sections. We also put in significant effort to ensure that most of our documentation can be run interactively in Pyodide or JupyterLite.
+
+- Modernize documentation by using latest pydata-sphinx-theme ([#4609](https://github.com/holoviz/panel/pull/4609), [#4701](https://github.com/holoviz/panel/pull/4701))
+- Add upgrade/migration guide ([#4693](https://github.com/holoviz/panel/pull/4693))
+- Add Explanation section ([#2797](https://github.com/holoviz/panel/pull/2797), [#3168](https://github.com/holoviz/panel/pull/3168), [#4664](https://github.com/holoviz/panel/pull/4664))
+- Migrate user guide to how-to guides ([#4244](https://github.com/holoviz/panel/pull/4244), [#4251](https://github.com/holoviz/panel/pull/4251), [#4267](https://github.com/holoviz/panel/pull/4267), [#4290](https://github.com/holoviz/panel/pull/4290), [#4412](https://github.com/holoviz/panel/pull/4412), [#4422](https://github.com/holoviz/panel/pull/4422), [#4759](https://github.com/holoviz/panel/pull/4759), [#4774](https://github.com/holoviz/panel/pull/4774))
+- Completely overhaul App Gallery ([#4047](https://github.com/holoviz/panel/pull/4047), [#4565](https://github.com/holoviz/panel/pull/4565), [#4574](https://github.com/holoviz/panel/pull/4574), [#4598](https://github.com/holoviz/panel/pull/4598), [#4683](https://github.com/holoviz/panel/pull/4683))
+- Use pyodide rendering throughout documentation and add JupyterLite links ([#4751](https://github.com/holoviz/panel/pull/4751))
+
+### Deprecations & API changes
+
+#### Compatibility
+
+- Bokeh 3 compatibility ([#4098](https://github.com/holoviz/panel/pull/4098), [#4117](https://github.com/holoviz/panel/pull/4117), [#4129](https://github.com/holoviz/panel/pull/4129), [#4140](https://github.com/holoviz/panel/pull/4140), [#4150](https://github.com/holoviz/panel/pull/4150), [#4275](https://github.com/holoviz/panel/pull/4275), [#4467](https://github.com/holoviz/panel/pull/4467), [#4435](https://github.com/holoviz/panel/pull/4435), [#4441](https://github.com/holoviz/panel/pull/4441), [#4449](https://github.com/holoviz/panel/pull/4449), [#4448](https://github.com/holoviz/panel/pull/4448), [#4508](https://github.com/holoviz/panel/pull/4508))
+- Upgrade plotly.js to 2.18.0 ([#4320](https://github.com/holoviz/panel/pull/4320))
+- Upgrade Tabulator to 5.4 and optimize rendering ([#4482](https://github.com/holoviz/panel/pull/4482)](https://github.com/holoviz/panel/pull/4482))
+- Upgrade Echarts to 5.4.1 ([#4538](https://github.com/holoviz/panel/pull/4538))
+- Upgrade pyodide (0.23.1) and pyscript versions ([#4344](https://github.com/holoviz/panel/pull/4344))
+- Add support for altair and vega-lite v5 ([#4488](https://github.com/holoviz/panel/pull/4488))
+- Add support for latest versions of ipywidgets ([#4716](https://github.com/holoviz/panel/pull/4716), [#4766](https://github.com/holoviz/panel/pull/4766), [#4779](https://github.com/holoviz/panel/pull/4779))
+
+#### Deprecations
+
+- Deprecate `IDOM` pane ([#4293](https://github.com/holoviz/panel/pull/4293)](https://github.com/holoviz/panel/pull/4293), [#4323](https://github.com/holoviz/panel/pull/4323))
+- Deprecate `Viewable.app` ([#4293](https://github.com/holoviz/panel/pull/4293)](https://github.com/holoviz/panel/pull/4293))
+- Deprecate `Viewable.pprint` ([#4347](https://github.com/holoviz/panel/pull/4347))
+- Deprecate and remove `RGGPlot`
+- Rename `Ace` to `CodeEditor` ([#4627](https://github.com/holoviz/panel/pull/4627))
+
+#### API changes & Backward Compatibility
+
+- Pandas is now only a (lazy) runtime dependency ([#4411](https://github.com/holoviz/panel/pull/4411))
+- `Tabulator.frozen_rows` now respects the order of rows in the data instead of the order in which the `frozen_rows` were defined ([#4482](https://github.com/holoviz/panel/pull/4482)](https://github.com/holoviz/panel/pull/4482))
+- Make `margin` defaults consistent across widgets and panes ([#4528](https://github.com/holoviz/panel/pull/4528))
+- Extension calls must specify all required extensions ([#4562](https://github.com/holoviz/panel/pull/4562))
+- The `.embed` method now returns a Mimebundle object for rendering ([#4791](https://github.com/holoviz/panel/pull/4791))
+- Remove `panel examples` CLI command and pyct dependency ([#4691](https://github.com/holoviz/panel/pull/4691))
+- Expose all layout components in top-level API ([#4696](https://github.com/holoviz/panel/pull/4696))
+
+### Other Enhancements
+
+#### Configuration
+
+- Allow to set the log level of the Admin logger ([#3495](https://github.com/holoviz/panel/pull/3495))
+- Add `pn.state.served` to simplify determining whether script is executed as an application or in an interactive session ([#4252](https://github.com/holoviz/panel/pull/4252))
+- Add `pn.config.loading_indicator` to determine whether to show loading indicator by default ([#4259](https://github.com/holoviz/panel/pull/4259))
+
+#### Jupyter
+
+- Improve startup, error handling and shutdown of Jupyter kernels ([#4364](https://github.com/holoviz/panel/pull/4364))
+- Log errors in JupyterLab preview to server logs ([#4773](https://github.com/holoviz/panel/pull/4773))
+- Support binary JS -> Python communication in notebooks ([#4635](https://github.com/holoviz/panel/pull/4635))
+- Modify sys.path when running inside Jupyter Kernel ([#4489](https://github.com/holoviz/panel/pull/4489))
+
+#### Pyodide
+
+- IPython `display` compatibility in pyodide builds ([#4270](https://github.com/holoviz/panel/pull/4270))
+- Ensure `panel convert` respects `pn.config` ([#4359](https://github.com/holoviz/panel/pull/4359))
+- Fix notification support in Pyodide ([#4387](https://github.com/holoviz/panel/pull/4387))
+
+#### Miscelleanous
+
+- Handle cancelling and empty value edit events on `Tabulator` ([#4343](https://github.com/holoviz/panel/pull/4343))
+- Add favicon to base template ([#4626](https://github.com/holoviz/panel/pull/4626))
+- Ensure `CrossSelector` filters apply on each keystroke ([#4339](https://github.com/holoviz/panel/pull/4339))
+- Do not re-create `Vega.selections` object unless selections changed ([#4497](https://github.com/holoviz/panel/pull/4497))
+- Standardize parameter mapping APIs ([#4386](https://github.com/holoviz/panel/pull/4386))
+- Add `Plotly.link_figure` parameter ([#4333](https://github.com/holoviz/panel/pull/4333))
+- Add support for .JPEG file extension in the `JPG` pane ([#4532](https://github.com/holoviz/panel/pull/4532))
+- Make periodic callback `counter` a parameter ([#4134](https://github.com/holoviz/panel/pull/4134))
+- Add Echarts events ([#2174](https://github.com/holoviz/panel/pull/2174))
+- Additional cache support ([#4663](https://github.com/holoviz/panel/pull/4663), [#4667](https://github.com/holoviz/panel/pull/4667))
+
+### Bug fixes
+
+- Fix caching on undecorated Parameterized method ([#4332](https://github.com/holoviz/panel/pull/4332))
+- Ensure that global notification object can be used inside notebook callbacks ([#4331](https://github.com/holoviz/panel/pull/4331))
+- Ensure `hash_funcs` are applied recursively in cache ([#4334](https://github.com/holoviz/panel/pull/4334))
+- Fix cache `FIFO` policy bug ([#4789](https://github.com/holoviz/panel/pull/4789))
+- Fix specifying custom index with relative path ([#4288](https://github.com/holoviz/panel/pull/4288))
+- Fix issue reusing `FileDownload` model ([#4328](https://github.com/holoviz/panel/pull/4328))
+- Fix `DeckGL` tooltip handling ([#4628](https://github.com/holoviz/panel/pull/4628))
+- Fix NumPy integer/floating checks on `Perspective` ([#4366](https://github.com/holoviz/panel/pull/4366))
+- Ensure `memray` profiler temporary file is flushed ([#4666](https://github.com/holoviz/panel/pull/4666))
+- Fix mimetype issue on windows ([#4738](https://github.com/holoviz/panel/pull/4738))
+- Fix `Plotly` undefined value errors for eventdata ([#4355](https://github.com/holoviz/panel/pull/4355))
+
+#### Tabulator
+
+- Ensure updates to `Tabulator` formatter or editor updates model ([#4296](https://github.com/holoviz/panel/pull/4296), [#4781](https://github.com/holoviz/panel/pull/4781))
+- Ensure `Tabulator` internal `_index_mapping` is updated on stream ([#4292](https://github.com/holoviz/panel/pull/4292))
+- Ensure `Tabulator` header filters aren't treated as regex ([#4423](https://github.com/holoviz/panel/pull/4423))
+- Ensure `Tabulator` `styles` are re-applied when local pagination changes ([#4795](https://github.com/holoviz/panel/pull/4795))
+
+#### Jupyter
+
+- Ensure JupyterLab preview works on Windows ([#4819](https://github.com/holoviz/panel/pull/4819))
+- Ensure notifications are enabled even if hv.extension has been loaded ([#4330](https://github.com/holoviz/panel/pull/4330))
+
+## Version 0.14.4
+
+Date: 2023-03-04
+
+This release is a small bug fix release preceding the upcoming major release of Panel 1.0. Many thanks to the contributors to this release which include @MarcSkovMadsen, @maximlt, @Hoxbro and @philippjfr.
+
+### Bugs
+
+- Fix `Tabulator` client-side string filters by not parsing them as regex ([4423](https://github.com/holoviz/panel/pull/4423))
+- Fix the RGGPlot pane ([#4380](https://github.com/holoviz/panel/pull/4380))
+- Fix `panel examples` command by ensuring examples are correctly packaged ([#4484](https://github.com/holoviz/panel/pull/4484))
+- Fix event generation by considering NaNs as equal when comparing Numpy arrays ([#4481](https://github.com/holoviz/panel/pull/4481))
+- Use cache from previous sessions when using `to_disk` ([#4481](https://github.com/holoviz/panel/pull/4481))
+- Fix relative imports when running inside Jupyter Kernel ([#4489](https://github.com/holoviz/panel/pull/4489))
+- Do not re-create `Vega.selections` object unless selections changed ([#4497](https://github.com/holoviz/panel/pull/4497))
+
+### Enhancements
+
+- Add support for altair and vega-lite v5 ([#4488](https://github.com/holoviz/panel/pull/4488))
+
+### Misc
+
+- Use latest react-grid from CDN ([#4461](https://github.com/holoviz/panel/pull/4461))
 
 ## Version 0.14.3
 
@@ -1218,7 +1424,7 @@ Date: 2019-03-21
 
 This is a minor release fixing an issue with recent versions of Tornado. It also fixes issue with the packages built on the PyViz conda channel.
 
-- Respect write-locks on synchronous Websocket events ([[#1170](https://github.com/holoviz/panel/pull/1170)](https://github.com/holoviz/panel/issues/1170))
+- Respect write-locks on synchronous Websocket events ([#1170](https://github.com/holoviz/panel/pull/1170)](https://github.com/holoviz/panel/issues/1170))
 
 ## Version 0.9.2
 
@@ -1228,10 +1434,10 @@ This is a minor release with a number of bug fixes. Many thanks to @ceball, @Gui
 
 Bug fixes:
 
-- Fix regression in DiscreteSlider layout ([[#1163](https://github.com/holoviz/panel/pull/1163)](https://github.com/holoviz/panel/issues/1164))
-- Fix for saving as PNG which regressed due to changes in bokeh 2.0 ([[#1165](https://github.com/holoviz/panel/pull/1165)](https://github.com/holoviz/panel/issues/1165))
-- Allow pn.serve to resolve Template instances returned by a function ([[#1167](https://github.com/holoviz/panel/pull/1167)](https://github.com/holoviz/panel/issues/1167))
-- Ensure Template can render empty HoloViews pane ([[#1168](https://github.com/holoviz/panel/pull/1168)](https://github.com/holoviz/panel/issues/1168))
+- Fix regression in DiscreteSlider layout ([#1163](https://github.com/holoviz/panel/pull/1163)](https://github.com/holoviz/panel/issues/1164))
+- Fix for saving as PNG which regressed due to changes in bokeh 2.0 ([#1165](https://github.com/holoviz/panel/pull/1165)](https://github.com/holoviz/panel/issues/1165))
+- Allow pn.serve to resolve Template instances returned by a function ([#1167](https://github.com/holoviz/panel/pull/1167)](https://github.com/holoviz/panel/issues/1167))
+- Ensure Template can render empty HoloViews pane ([#1168](https://github.com/holoviz/panel/pull/1168)](https://github.com/holoviz/panel/issues/1168))
 
 ## Version 0.9.1
 
@@ -1241,8 +1447,8 @@ This is very minor releases fixing small regressions in the 0.9.0 release:
 
 Bug fixes:
 
-- Fix issue with `Button` label not being applied ([[#1152](https://github.com/holoviz/panel/pull/1152)](https://github.com/holoviz/panel/issues/1152))
-- Pin pyviz_comms 0.7.4 to avoid issues with undefined vars ([[#1153](https://github.com/holoviz/panel/pull/1153)](https://github.com/holoviz/panel/issues/1153))
+- Fix issue with `Button` label not being applied ([#1152](https://github.com/holoviz/panel/pull/1152)](https://github.com/holoviz/panel/issues/1152))
+- Pin pyviz_comms 0.7.4 to avoid issues with undefined vars ([#1153](https://github.com/holoviz/panel/pull/1153)](https://github.com/holoviz/panel/issues/1153))
 
 ## Version 0.9.0
 
@@ -1252,14 +1458,14 @@ This is a major release primarily for compatibility with the recent Bokeh 2.0 re
 
 Features:
 
-- Added a `MultiChoice` widget ([[#1140](https://github.com/holoviz/panel/pull/1140)](https://github.com/holoviz/panel/issues/1140))
-- Add `FileDownload` widget ([#915](https://github.com/holoviz/panel/issues/915), [[#1146](https://github.com/holoviz/panel/pull/1146)](https://github.com/holoviz/panel/issues/1146))
-- Add ability to define `Slider` format option ([[#1142](https://github.com/holoviz/panel/pull/1142)](https://github.com/holoviz/panel/issues/1142))
-- Expose `pn.state.cookies` and `pn.state.headers` to allow accessing HTTP headers and requests from inside an app ([[#1143](https://github.com/holoviz/panel/pull/1143))
+- Added a `MultiChoice` widget ([#1140](https://github.com/holoviz/panel/pull/1140)](https://github.com/holoviz/panel/issues/1140))
+- Add `FileDownload` widget ([#915](https://github.com/holoviz/panel/issues/915), [#1146](https://github.com/holoviz/panel/pull/1146)](https://github.com/holoviz/panel/issues/1146))
+- Add ability to define `Slider` format option ([#1142](https://github.com/holoviz/panel/pull/1142)](https://github.com/holoviz/panel/issues/1142))
+- Expose `pn.state.cookies` and `pn.state.headers` to allow accessing HTTP headers and requests from inside an app ([#1143](https://github.com/holoviz/panel/pull/1143))
 
 Bug fixes:
 
-- Ensure `DiscreteSlider` respects layout options ([[#1144](https://github.com/holoviz/panel/pull/1144)](https://github.com/holoviz/panel/issues/1144))
+- Ensure `DiscreteSlider` respects layout options ([#1144](https://github.com/holoviz/panel/pull/1144)](https://github.com/holoviz/panel/issues/1144))
 
 Removals:
 
@@ -1273,16 +1479,16 @@ This release is a minor release with a number of bug fixes and minor enhancement
 
 Minor enhancements:
 
-- Added verbose option to display server address ([[#1098](https://github.com/holoviz/panel/pull/1098)](https://github.com/holoviz/panel/issues/1098)) [@philippjfr]
+- Added verbose option to display server address ([#1098](https://github.com/holoviz/panel/pull/1098)](https://github.com/holoviz/panel/issues/1098)) [@philippjfr]
 
 Bug fixes:
 
-- Fix PNG export due to issue with PhantomJS ([[#1081](https://github.com/holoviz/panel/pull/1081)](https://github.com/holoviz/panel/issues/1081), [[#1092](https://github.com/holoviz/panel/pull/1092)](https://github.com/holoviz/panel/issues/1092)) [@bstadlbauer, @philippjfr]
-- Fix for threaded server ([[#1090](https://github.com/holoviz/panel/pull/1090)](https://github.com/holoviz/panel/issues/1090)) [@xavArtley]
-- Ensure Plotly Pane does not perform rerender on each property change ([[#1109](https://github.com/holoviz/panel/pull/1109)](https://github.com/holoviz/panel/issues/1109)) [@philippjfr]
-- Fix issues with jslink and other callbacks in Template ([[#1135](https://github.com/holoviz/panel/pull/1135)](https://github.com/holoviz/panel/issues/1135)) [@philippjfr]
-- Various fixes for VTK pane ([[#1123](https://github.com/holoviz/panel/pull/1123)](https://github.com/holoviz/panel/issues/1123)) [@xavArtley]
-- Fixes for .show keyword arguments ([[#1073](https://github.com/holoviz/panel/pull/1073)](https://github.com/holoviz/panel/issues/1073), [[#1106](https://github.com/holoviz/panel/pull/1106)](https://github.com/holoviz/panel/issues/1106)) [@gmoutso]
+- Fix PNG export due to issue with PhantomJS ([#1081](https://github.com/holoviz/panel/pull/1081)](https://github.com/holoviz/panel/issues/1081), [#1092](https://github.com/holoviz/panel/pull/1092)](https://github.com/holoviz/panel/issues/1092)) [@bstadlbauer, @philippjfr]
+- Fix for threaded server ([#1090](https://github.com/holoviz/panel/pull/1090)](https://github.com/holoviz/panel/issues/1090)) [@xavArtley]
+- Ensure Plotly Pane does not perform rerender on each property change ([#1109](https://github.com/holoviz/panel/pull/1109)](https://github.com/holoviz/panel/issues/1109)) [@philippjfr]
+- Fix issues with jslink and other callbacks in Template ([#1135](https://github.com/holoviz/panel/pull/1135)](https://github.com/holoviz/panel/issues/1135)) [@philippjfr]
+- Various fixes for VTK pane ([#1123](https://github.com/holoviz/panel/pull/1123)](https://github.com/holoviz/panel/issues/1123)) [@xavArtley]
+- Fixes for .show keyword arguments ([#1073](https://github.com/holoviz/panel/pull/1073)](https://github.com/holoviz/panel/issues/1073), [#1106](https://github.com/holoviz/panel/pull/1106)](https://github.com/holoviz/panel/issues/1106)) [@gmoutso]
 
 ## Version 0.8.0
 
@@ -1382,7 +1588,7 @@ Other enhancements:
    * Added min_characters parameter to AutocompleteInput ([#721](https://github.com/holoviz/panel/issues/721))
    * Added accept parameter to FileInput ([#602](https://github.com/holoviz/panel/issues/602))
    * Added definition_order parameter to CrossSelector ([#570](https://github.com/holoviz/panel/issues/570))
-   * Misc widget fixes and improvements ([#703](https://github.com/holoviz/panel/issues/703), [#717](https://github.com/holoviz/panel/issues/717), [#724](https://github.com/holoviz/panel/issues/724), [#762](https://github.com/holoviz/panel/issues/762), [[#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775))
+   * Misc widget fixes and improvements ([#703](https://github.com/holoviz/panel/issues/703), [#717](https://github.com/holoviz/panel/issues/717), [#724](https://github.com/holoviz/panel/issues/724), [#762](https://github.com/holoviz/panel/issues/762), [#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775))
 
 Bug fixes and minor improvements:
 - Removed mutable default args ([#692](https://github.com/holoviz/panel/issues/692), [#694](https://github.com/holoviz/panel/issues/694))
@@ -1390,7 +1596,7 @@ Bug fixes and minor improvements:
 - Improved fancy layout for scrubber ([#571](https://github.com/holoviz/panel/issues/571))
 - Improved plotly datetime handling ([#688](https://github.com/holoviz/panel/issues/688), [#698](https://github.com/holoviz/panel/issues/698))
 - Improved JSON embedding ([#589](https://github.com/holoviz/panel/issues/589))
-- Misc fixes and improvements ([#626](https://github.com/holoviz/panel/issues/626), [#631](https://github.com/holoviz/panel/issues/631), [#645](https://github.com/holoviz/panel/issues/645), [#662](https://github.com/holoviz/panel/issues/662), [#681](https://github.com/holoviz/panel/issues/681), [#689](https://github.com/holoviz/panel/issues/689), [#695](https://github.com/holoviz/panel/issues/695), [#723](https://github.com/holoviz/panel/issues/723), [#725](https://github.com/holoviz/panel/issues/725), [#738](https://github.com/holoviz/panel/issues/738), [#743](https://github.com/holoviz/panel/issues/743), [#744](https://github.com/holoviz/panel/issues/744), [#748](https://github.com/holoviz/panel/issues/748), [#749](https://github.com/holoviz/panel/issues/749), [#758](https://github.com/holoviz/panel/issues/758), [#768](https://github.com/holoviz/panel/issues/768), [#772](https://github.com/holoviz/panel/issues/772), [#774](https://github.com/holoviz/panel/issues/774), [[#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775), [#779](https://github.com/holoviz/panel/issues/779), [#784](https://github.com/holoviz/panel/issues/784), [#785](https://github.com/holoviz/panel/issues/785), [#787](https://github.com/holoviz/panel/issues/787), [#788](https://github.com/holoviz/panel/issues/788), [#789](https://github.com/holoviz/panel/issues/789))
+- Misc fixes and improvements ([#626](https://github.com/holoviz/panel/issues/626), [#631](https://github.com/holoviz/panel/issues/631), [#645](https://github.com/holoviz/panel/issues/645), [#662](https://github.com/holoviz/panel/issues/662), [#681](https://github.com/holoviz/panel/issues/681), [#689](https://github.com/holoviz/panel/issues/689), [#695](https://github.com/holoviz/panel/issues/695), [#723](https://github.com/holoviz/panel/issues/723), [#725](https://github.com/holoviz/panel/issues/725), [#738](https://github.com/holoviz/panel/issues/738), [#743](https://github.com/holoviz/panel/issues/743), [#744](https://github.com/holoviz/panel/issues/744), [#748](https://github.com/holoviz/panel/issues/748), [#749](https://github.com/holoviz/panel/issues/749), [#758](https://github.com/holoviz/panel/issues/758), [#768](https://github.com/holoviz/panel/issues/768), [#772](https://github.com/holoviz/panel/issues/772), [#774](https://github.com/holoviz/panel/issues/774), [#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775), [#779](https://github.com/holoviz/panel/issues/779), [#784](https://github.com/holoviz/panel/issues/784), [#785](https://github.com/holoviz/panel/issues/785), [#787](https://github.com/holoviz/panel/issues/787), [#788](https://github.com/holoviz/panel/issues/788), [#789](https://github.com/holoviz/panel/issues/789))
 - Prepare support for python 3.8 ([#702](https://github.com/holoviz/panel/issues/702))
 
 Documentation:
@@ -2237,7 +2443,7 @@ Other enhancements:
    * Added min_characters parameter to AutocompleteInput ([#721](https://github.com/holoviz/panel/issues/721))
    * Added accept parameter to FileInput ([#602](https://github.com/holoviz/panel/issues/602))
    * Added definition_order parameter to CrossSelector ([#570](https://github.com/holoviz/panel/issues/570))
-   * Misc widget fixes and improvements ([#703](https://github.com/holoviz/panel/issues/703), [#717](https://github.com/holoviz/panel/issues/717), [#724](https://github.com/holoviz/panel/issues/724), [#762](https://github.com/holoviz/panel/issues/762), [[#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775))
+   * Misc widget fixes and improvements ([#703](https://github.com/holoviz/panel/issues/703), [#717](https://github.com/holoviz/panel/issues/717), [#724](https://github.com/holoviz/panel/issues/724), [#762](https://github.com/holoviz/panel/issues/762), [#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775))
 
 Bug fixes and minor improvements:
 - Removed mutable default args ([#692](https://github.com/holoviz/panel/issues/692), [#694](https://github.com/holoviz/panel/issues/694))
@@ -2245,7 +2451,7 @@ Bug fixes and minor improvements:
 - Improved fancy layout for scrubber ([#571](https://github.com/holoviz/panel/issues/571))
 - Improved plotly datetime handling ([#688](https://github.com/holoviz/panel/issues/688), [#698](https://github.com/holoviz/panel/issues/698))
 - Improved JSON embedding ([#589](https://github.com/holoviz/panel/issues/589))
-- Misc fixes and improvements ([#626](https://github.com/holoviz/panel/issues/626), [#631](https://github.com/holoviz/panel/issues/631), [#645](https://github.com/holoviz/panel/issues/645), [#662](https://github.com/holoviz/panel/issues/662), [#681](https://github.com/holoviz/panel/issues/681), [#689](https://github.com/holoviz/panel/issues/689), [#695](https://github.com/holoviz/panel/issues/695), [#723](https://github.com/holoviz/panel/issues/723), [#725](https://github.com/holoviz/panel/issues/725), [#738](https://github.com/holoviz/panel/issues/738), [#743](https://github.com/holoviz/panel/issues/743), [#744](https://github.com/holoviz/panel/issues/744), [#748](https://github.com/holoviz/panel/issues/748), [#749](https://github.com/holoviz/panel/issues/749), [#758](https://github.com/holoviz/panel/issues/758), [#768](https://github.com/holoviz/panel/issues/768), [#772](https://github.com/holoviz/panel/issues/772), [#774](https://github.com/holoviz/panel/issues/774), [[#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775), [#779](https://github.com/holoviz/panel/issues/779), [#784](https://github.com/holoviz/panel/issues/784), [#785](https://github.com/holoviz/panel/issues/785), [#787](https://github.com/holoviz/panel/issues/787), [#788](https://github.com/holoviz/panel/issues/788), [#789](https://github.com/holoviz/panel/issues/789))
+- Misc fixes and improvements ([#626](https://github.com/holoviz/panel/issues/626), [#631](https://github.com/holoviz/panel/issues/631), [#645](https://github.com/holoviz/panel/issues/645), [#662](https://github.com/holoviz/panel/issues/662), [#681](https://github.com/holoviz/panel/issues/681), [#689](https://github.com/holoviz/panel/issues/689), [#695](https://github.com/holoviz/panel/issues/695), [#723](https://github.com/holoviz/panel/issues/723), [#725](https://github.com/holoviz/panel/issues/725), [#738](https://github.com/holoviz/panel/issues/738), [#743](https://github.com/holoviz/panel/issues/743), [#744](https://github.com/holoviz/panel/issues/744), [#748](https://github.com/holoviz/panel/issues/748), [#749](https://github.com/holoviz/panel/issues/749), [#758](https://github.com/holoviz/panel/issues/758), [#768](https://github.com/holoviz/panel/issues/768), [#772](https://github.com/holoviz/panel/issues/772), [#774](https://github.com/holoviz/panel/issues/774), [#775](https://github.com/holoviz/panel/issues/775)](https://github.com/holoviz/panel/issues/775), [#779](https://github.com/holoviz/panel/issues/779), [#784](https://github.com/holoviz/panel/issues/784), [#785](https://github.com/holoviz/panel/issues/785), [#787](https://github.com/holoviz/panel/issues/787), [#788](https://github.com/holoviz/panel/issues/788), [#789](https://github.com/holoviz/panel/issues/789))
 - Prepare support for python 3.8 ([#702](https://github.com/holoviz/panel/issues/702))
 
 Documentation:

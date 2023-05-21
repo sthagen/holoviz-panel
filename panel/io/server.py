@@ -50,11 +50,12 @@ from bokeh.embed.wrappers import wrap_in_script_tag
 from bokeh.io import curdoc
 from bokeh.models import CustomJS
 from bokeh.server.server import Server as BokehServer
-from bokeh.server.urls import per_app_patterns
+from bokeh.server.urls import per_app_patterns, toplevel_patterns
 from bokeh.server.views.autoload_js_handler import (
     AutoloadJsHandler as BkAutoloadJsHandler,
 )
 from bokeh.server.views.doc_handler import DocHandler as BkDocHandler
+from bokeh.server.views.root_handler import RootHandler as BkRootHandler
 from bokeh.server.views.static_handler import StaticHandler
 from bokeh.util.serialization import make_id
 from bokeh.util.token import (
@@ -532,16 +533,31 @@ class AutoloadJsHandler(BkAutoloadJsHandler, SessionPrefixHandler):
         with self._session_prefix():
             session = await self.get_session()
             with set_curdoc(session.document):
-                resources = Resources.from_bokeh(self.application.resources(server_url))
+                resources = Resources.from_bokeh(
+                    self.application.resources(server_url), absolute=True
+                )
                 js = autoload_js_script(
                     session.document, resources, session.token, element_id,
-                    app_path, absolute_url
+                    app_path, absolute_url, absolute=True
                 )
 
         self.set_header("Content-Type", 'application/javascript')
         self.write(js)
 
 per_app_patterns[3] = (r'/autoload.js', AutoloadJsHandler)
+
+class RootHandler(BkRootHandler):
+    """
+    Custom RootHandler that provides the CDN_DIST directory as a
+    template variable.
+    """
+
+    def render(self, *args, **kwargs):
+        kwargs['PANEL_CDN'] = CDN_DIST
+        return super().render(*args, **kwargs)
+
+toplevel_patterns[0] = (r'/?', RootHandler)
+bokeh.server.tornado.RootHandler = RootHandler
 
 
 class ComponentResourceHandler(StaticFileHandler):
@@ -692,7 +708,7 @@ def modify_document(self, doc: 'Document'):
         def handle_exception(handler, e):
             from bokeh.application.handlers.handler import handle_exception
 
-            from ..pane import HTML
+            from ..pane import Alert
 
             # Clean up
             del sys.modules[module.__name__]
@@ -706,9 +722,9 @@ def modify_document(self, doc: 'Document'):
 
             # Serve error
             e_msg = str(e).replace('\033[1m', '<b>').replace('\033[0m', '</b>')
-            HTML(
-                f'<b>{type(e).__name__}</b>: {e_msg}</br><pre style="overflow-y: scroll">{tb}</pre>',
-                css_classes=['alert', 'alert-danger'], sizing_mode='stretch_width'
+            Alert(
+                f'<b>{type(e).__name__}</b>: {e_msg}</br><pre style="overflow-y: auto">{tb}</pre>',
+                alert_type='danger', margin=5, sizing_mode='stretch_width'
             ).servable()
 
         if config.autoreload:

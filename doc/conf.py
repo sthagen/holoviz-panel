@@ -61,7 +61,7 @@ html_theme_options = {
         },
         {
             "name": "Discord",
-            "url": "https://discord.gg/muhupDZM",
+            "url": "https://discord.gg/AXRHnJU6sP",
             "icon": "fa-brands fa-discord",
         },
     ],
@@ -177,9 +177,13 @@ orig_grid_run = GridItemCardDirective.run
 
 def patched_grid_run(self):
     app = self.state.document.settings.env.app
+    existing_link = self.options.get('link')
     domain = getattr(app.config, 'grid_item_link_domain', None)
     if self.has_content:
         self.content.replace('|gallery-endpoint|', domain)
+    if existing_link and domain:
+        new_link = existing_link.replace('|gallery-endpoint|', domain)
+        self.options['link'] = new_link
     return list(orig_grid_run(self))
 
 GridItemCardDirective.run = patched_grid_run
@@ -198,6 +202,14 @@ def patched_card_run(self):
 CardDirective.run = patched_card_run
 
 def setup(app) -> None:
+    try:
+        from nbsite.paramdoc import param_formatter, param_skip
+        app.connect('autodoc-process-docstring', param_formatter)
+        app.connect('autodoc-skip-member', param_skip)
+    except ImportError:
+        print('no param_formatter (no param?)')
+
+    nbbuild.setup(app)
     app.add_config_value('grid_item_link_domain', '', 'html')
 
 grid_item_link_domain = gallery_endpoint

@@ -4,7 +4,6 @@ resources via the panel.config object.
 """
 from __future__ import annotations
 
-import copy
 import importlib
 import json
 import logging
@@ -334,7 +333,7 @@ def bundled_files(model, file_type='javascript'):
             files.append(url)
     return files
 
-def bundle_resources(roots, resources, notebook=False, reloading=False):
+def bundle_resources(roots, resources, notebook=False, reloading=False, enable_mathjax='auto'):
     from ..config import panel_extension as ext
     global RESOURCE_MODE
     if not isinstance(resources, Resources):
@@ -347,21 +346,19 @@ def bundle_resources(roots, resources, notebook=False, reloading=False):
     css_files = []
     css_raw = []
 
-    use_mathjax = (_use_mathjax(roots) or 'mathjax' in ext._loaded_extensions) if roots else True
+    if isinstance(enable_mathjax, bool):
+        use_mathjax = enable_mathjax
+    elif roots:
+        use_mathjax = _use_mathjax(roots) or 'mathjax' in ext._loaded_extensions
+    else:
+        use_mathjax = False
 
     if js_resources:
-        if hasattr(BkResources, 'clone'):
-            js_resources = js_resources.clone()
-            if not use_mathjax and "bokeh-mathjax" in js_resources.components:
-                js_resources.components.remove("bokeh-mathjax")
-            if reloading:
-                js_resources.components.clear()
-        else:
-            js_resources = copy.deepcopy(js_resources)
-            if reloading:
-                js_resources.js_components.clear()
-            if not use_mathjax and "bokeh-mathjax" in js_resources.js_components:
-                js_resources.js_components.remove("bokeh-mathjax")
+        js_resources = js_resources.clone()
+        if not use_mathjax and "bokeh-mathjax" in js_resources.components:
+            js_resources.components.remove("bokeh-mathjax")
+        if reloading:
+            js_resources.components.clear()
 
         js_files.extend(js_resources.js_files)
         js_raw.extend(js_resources.js_raw)
@@ -378,7 +375,11 @@ def bundle_resources(roots, resources, notebook=False, reloading=False):
     if mode == "inline":
         js_raw.extend([ Resources._inline(bundle.artifact_path) for bundle in extensions ])
     elif mode == "server":
-        js_files.extend([ bundle.server_url for bundle in extensions ])
+        for bundle in extensions:
+            server_url = bundle.server_url
+            if resources.root_url and not resources.absolute:
+                server_url = server_url.replace(resources.root_url, '')
+            js_files.append(server_url)
     elif mode == "cdn":
         for bundle in extensions:
             if bundle.cdn_url is not None:
@@ -667,7 +668,7 @@ class Resources(BkResources):
         if config.global_loading_spinner:
             loading_base = (DIST_DIR / "css" / "loading.css").read_text(encoding='utf-8')
             raw.extend([loading_base, loading_css()])
-        return raw + process_raw_css(config.raw_css)
+        return raw + process_raw_css(config.raw_css) + process_raw_css(config.global_css)
 
     @property
     def js_files(self):

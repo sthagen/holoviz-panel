@@ -4,7 +4,7 @@ This guide addresses how to bind interactive data pipelines to a component using
 
 ---
 
-`hvplot.interactive` is a tool to get better control over your data pipelines. This is done by replacing the constant parameters in your pipeline with widgets (e.g., a number slider) that will automatically get displayed next to your pipeline output and trigger an output update on changes. With this approach, all your pipeline parameters are available in one place, and you get complete interactive control over the pipeline. For more information, check out the [hvPlot documentation](https://hvplot.holoviz.org/user_guide/Interactive.html).
+`hvplot.interactive` is a tool to get better control over your data pipelines. This is done by replacing the constant parameters in your pipeline with widgets (e.g., a number slider) that will automatically get displayed next to your pipeline output and trigger an output update on changes. With this approach, all your pipeline parameters are available in one place, and you get complete interactive control over the pipeline. For more information, check out the [hvPlot documentation](https://panel.holoviz.org/how_to/interactivity/hvplot_interactive.html).
 
 Let's start by fetching some data:
 
@@ -26,13 +26,13 @@ species_widget = pn.widgets.Select(name="species", options=["Adelie", "Gentoo", 
 year_widget = pn.widgets.IntSlider(name="year", start=2007, end=2009)
 ```
 
-Let's then use these to filter the data. We can do this by using `hvplot.interactive` and passing the `species_widget` as the `species` parameter and the `year_widget` as the `year` parameter. In our case, we want the year always to be greater than the widget's value.
+Let's then use these to filter the data. We can do this by using `hvplot.interactive` and passing the `species_widget` as the `species` parameter and the `year_widget` as the `year` parameter. In our case, we want the year always to be greater than or equal to the widget's value.
 
 ```{pyodide}
 import hvplot.pandas  # Enable interactive
 
 idf = df.interactive()
-idf = idf[(idf["species"] == species_widget) & (idf["year"] > year_widget)]
+idf = idf[(idf["species"] == species_widget) & (idf["year"] >= year_widget)]
 
 idf.head()
 ```
