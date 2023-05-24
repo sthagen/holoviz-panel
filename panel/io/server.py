@@ -316,7 +316,7 @@ def server_html_page_for_session(
         )
         if config.global_loading_spinner:
             html = html.replace(
-                '<body>', f'<body class="{LOADING_INDICATOR_CSS_CLASS} {config.loading_spinner}">'
+                '<body>', f'<body class="{LOADING_INDICATOR_CSS_CLASS} pn-{config.loading_spinner}">'
             )
     return html
 
@@ -723,7 +723,7 @@ def modify_document(self, doc: 'Document'):
             # Serve error
             e_msg = str(e).replace('\033[1m', '<b>').replace('\033[0m', '</b>')
             Alert(
-                f'<b>{type(e).__name__}</b>: {e_msg}</br><pre style="overflow-y: auto">{tb}</pre>',
+                f'<b>{type(e).__name__}</b>: {e_msg}\n<pre style="overflow-y: auto">{tb}</pre>',
                 alert_type='danger', margin=5, sizing_mode='stretch_width'
             ).servable()
 
