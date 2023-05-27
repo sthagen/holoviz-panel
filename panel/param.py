@@ -200,8 +200,6 @@ class Param(PaneBase):
     if hasattr(param, 'Event'):
         mapping[param.Event] = Button
 
-    priority: ClassVar[float | bool | None] = 0.1
-
     _ignored_refs: ClassVar[Tuple[str]] = ('object',)
 
     _linkable_properties: ClassVar[Tuple[str]] = ()
@@ -297,6 +295,7 @@ class Param(PaneBase):
                     parameters = []
                 else:
                     parameters = [p for p in event.new.param if p != 'name']
+                if event.new is not None:
                     self.name = param_name(event.new.name)
             if event.name == 'parameters':
                 if event.new is None:
@@ -468,6 +467,13 @@ class Param(PaneBase):
             kw['description'] = textwrap.dedent(p_obj.doc).strip()
 
         # Update kwargs
+        ignored_kws = [repr(k) for k in kw_widget if k not in widget_class.param]
+        if ignored_kws:
+            self.param.warning(
+                f'Param pane was given unknown keyword argument(s) for {p_name!r} '
+                f'parameter with a widget of type {widget_class!r}. The following '
+                f'keyword arguments could not be applied: {", ".join(ignored_kws)}.'
+            )
         kw.update(kw_widget)
 
         kwargs = {k: v for k, v in kw.items() if k in widget_class.param}
@@ -696,9 +702,11 @@ class Param(PaneBase):
 
     @classmethod
     def applies(cls, obj: Any) -> float | bool | None:
-        return (is_parameterized(obj) or
-                isinstance(obj, param.parameterized.Parameters) or
-                (isinstance(obj, param.Parameter) and obj.owner is not None))
+        if isinstance(obj, param.parameterized.Parameters):
+            return 0.8
+        elif (is_parameterized(obj) or (isinstance(obj, param.Parameter) and obj.owner is not None)):
+            return 0.1
+        return False
 
     @classmethod
     def widget_type(cls, pobj):

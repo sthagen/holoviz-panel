@@ -3,9 +3,10 @@ Custom bokeh Widget models.
 """
 from bokeh.core.enums import ButtonType
 from bokeh.core.properties import (
-    Any, Bool, Either, Enum, Float, Int, List, Nullable, Override, String,
-    Tuple,
+    Any, Bool, Either, Enum, Float, Instance, Int, List, Nullable, Override,
+    String, Tuple,
 )
+from bokeh.models.ui.icons import Icon
 from bokeh.models.widgets import InputWidget, Select, Widget
 
 from .layout import HTMLBox
@@ -58,13 +59,13 @@ class SingleSelect(InputWidget):
     value will be corresponding given label.
     """)
 
-    value = String(help="Initial or selected value.")
-
     size = Int(default=4, help="""
     The number of visible options in the dropdown list. (This uses the
     ``select`` HTML element's ``size`` attribute. Some browsers might not
     show less than 3 options.)
     """)
+
+    value = Nullable(String, help="Initial or selected value.")
 
 
 class Audio(HTMLBox):
@@ -157,6 +158,12 @@ class FileDownload(InputWidget):
     data = String(help="""Encoded URI data.""")
 
     embed = Bool(False, help="""Whether the data is pre-embedded.""")
+
+    icon = Nullable(Instance(Icon), help="""
+    An optional image appearing to the left of button's text. An instance of
+    :class:`~bokeh.models.Icon` (such as :class:`~bokeh.models.BuiltinIcon`,
+    :class:`~bokeh.models.SVGIcon`, or :class:`~bokeh.models.TablerIcon`).`
+    """)
 
     label = String("", help="""The text label for the button to display.""")
 
