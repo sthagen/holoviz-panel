@@ -187,7 +187,9 @@ class Syncable(Renderable):
             properties['min_height'] = properties['height']
         if 'stylesheets' in properties:
             from .config import config
-            stylesheets = [loading_css(), f'{CDN_DIST}css/loading.css']
+            stylesheets = [loading_css(
+                config.loading_spinner, config.loading_color, config.loading_max_height
+            ), f'{CDN_DIST}css/loading.css']
             stylesheets += process_raw_css(config.raw_css)
             stylesheets += config.css_files
             stylesheets += [
@@ -901,7 +903,7 @@ class SyncableData(Reactive):
     with the frontend via a ColumnDataSource.
     """
 
-    selection = param.List(default=[], class_=int, doc="""
+    selection = param.List(default=[], item_type=int, doc="""
         The currently selected rows in the data.""")
 
     # Parameters which when changed require an update of the data
