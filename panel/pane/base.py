@@ -93,6 +93,11 @@ class RerenderError(RuntimeError):
     Error raised when a pane requests re-rendering during initial render.
     """
 
+    def __init__(self, *args, layout=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.layout = layout
+
+
 T = TypeVar('T', bound='PaneBase')
 
 class PaneBase(Reactive):
@@ -633,11 +638,13 @@ class ReplacementPane(PaneBase):
             changing = any(p in old._rerender_params for p in new_params)
             old._object_changing = changing
             try:
-                old.param.update(**new_params)
+                with param.edit_constant(old):
+                    old.param.update(**new_params)
             finally:
                 old._object_changing = False
         else:
-            old.param.update(**new_params)
+            with param.edit_constant(old):
+                old.param.update(**new_params)
 
     @classmethod
     def _update_from_object(cls, object: Any, old_object: Any, was_internal: bool, inplace: bool=False, **kwargs):
