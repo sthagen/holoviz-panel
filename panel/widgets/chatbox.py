@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union,
+    Any, ClassVar, Dict, List, Optional, Tuple, Type, Union,
 )
 
 import param
@@ -37,12 +37,13 @@ class ChatRow(CompositeWidget):
         The type of Panel object or callable to use if an item in value is not
         already rendered as a Panel object; if None, uses the
         pn.panel function to render a displayable Panel object.
-        If the item is not serializable, will fall back to pn.panel.
-        """)
+        If the item is not serializable, will fall back to pn.panel.""")
 
-    icon = param.String(default=None, doc="""The icon to display adjacent to the value""")
+    icon = param.String(default=None, doc="""
+        The icon to display adjacent to the value""")
 
-    liked = param.Boolean(default=False, doc="""Whether a user liked the message""")
+    liked = param.Boolean(default=False, doc="""
+        Whether a user liked the message""")
 
     margin = Margin(default=0, doc="""
         Allows to create additional space around the component. May
@@ -64,7 +65,6 @@ class ChatRow(CompositeWidget):
     def __init__(
         self,
         value: List[Any],
-        default_message_callable: Viewable = None,
         icon: str = None,
         show_name: bool = True,
         show_like: bool = True,
@@ -75,22 +75,24 @@ class ChatRow(CompositeWidget):
             "overflow-x": "auto",
             "overflow-y": "auto",
             "box-shadow": "rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;",
-            "padding": "0.5em"
+            "padding": "0.5em",
         }
         if styles:
             bubble_styles.update(styles)
-        text_style = {'color': bubble_styles.get('color')}
         icon_styles = dict((styles or {}))
-        icon_styles.pop('background', None)
-        icon_styles.pop('color', None)
-        icon_styles.update({
-            'border-radius': '50%',
-            'font-weight': 'bold',
-            'font-size': '1.2em',
-            'text-align': 'center'
-        })
+        icon_styles.pop("background", None)
+        icon_styles.pop("color", None)
+        icon_styles.update(
+            {
+                "border-radius": "50%",
+                "font-weight": "bold",
+                "font-size": "1.2em",
+                "text-align": "center",
+            }
+        )
         if "background" not in bubble_styles:
             bubble_styles["background"] = "black"
+        self._bubble_styles = bubble_styles
         super().__init__(value=value, icon=icon, **params)
 
         # create the chat icon
@@ -101,23 +103,16 @@ class ChatRow(CompositeWidget):
             self._icon = None
 
         # create the chat bubble
-        bubble_objects = [
-            self._serialize_obj(obj, default_message_callable, text_style) for obj in value
-        ]
         self._bubble = Column(
-            *bubble_objects,
-            align='center',
+            *[self._serialize_obj(obj) for obj in self.value],
+            align="center",
             margin=8,
-            styles=bubble_styles,
+            styles=bubble_styles
         )
 
         # create heart icon next to chat
         self._like = Toggle(
-            name="♡",
-            width=30,
-            height=30,
-            align="end",
-            visible=show_like
+            name="♡", width=30, height=30, align="end", visible=show_like
         )
         self._like.link(self, value="liked", bidirectional=True)
         self._like.param.watch(self._update_like, "value")
@@ -148,7 +143,9 @@ class ChatRow(CompositeWidget):
             self._name = Markdown(
                 object=self.name,
                 align=(horizontal_align, "start"),
-                margin=(-15, 15, 0, 0) if horizontal_align == 'end' else (-15, 0, 0, 15),
+                margin=(-15, 15, 0, 0)
+                if horizontal_align == "end"
+                else (-15, 0, 0, 15),
                 styles={"font-size": "0.88em", "color": "grey"},
             )
             if self.align_name == "start":
@@ -160,21 +157,26 @@ class ChatRow(CompositeWidget):
 
         self._composite[:] = [row]
 
-    def _serialize_obj(self, obj: Any, default_message_callable: Callable, text_styles: Dict) -> Viewable:
+    def _serialize_obj(
+        self, obj: Any
+    ) -> Viewable:
         """
         Convert an object to a Panel object.
         """
         if isinstance(obj, Viewable):
             return obj
 
-        stylesheets=['p { margin-block-start: 0.2em; margin-block-end: 0.2em;}']
+        stylesheets = ["p { margin-block-start: 0.2em; margin-block-end: 0.2em;}"]
+        text_styles = {"color": self._bubble_styles.get("color")}
         try:
-            if default_message_callable is None or issubclass(
-                default_message_callable, PaneBase
+            if self.default_message_callable is None or issubclass(
+                self.default_message_callable, PaneBase
             ):
-                panel_obj = (default_message_callable or _panel)(obj, stylesheets=stylesheets, styles=text_styles)
+                panel_obj = (self.default_message_callable or _panel)(
+                    obj, stylesheets=stylesheets, styles=text_styles
+                )
             else:
-                panel_obj = default_message_callable(value=obj)
+                panel_obj = self.default_message_callable(value=obj)
         except ValueError:
             panel_obj = _panel(obj, stylesheets=stylesheets, styles=text_styles)
 
@@ -210,8 +212,7 @@ class ChatBox(CompositeWidget):
         e.g. `[{'You': ['Welcome!', 'Good bye!']}]` The message(s) can be
         any Python object that can be rendered by Panel.""")
 
-    primary_name = param.String(default=None, doc="""
-        Name of the primary user (the one who inputs messages);
+    primary_name = param.String(default=None, doc="""Name of the primary user (the one who inputs messages);
         the first key found in value will be used if unspecified.""")
 
     allow_input = param.Boolean(default=True, doc="""
@@ -316,9 +317,9 @@ class ChatBox(CompositeWidget):
         self._current_hue = hue
 
         return [
-            (f"hsl({hue}, 45%, 50%)", 'white'),
-            (f"hsl({hue}, 30%, 55%)", 'white'),
-            (f"hsl({hue}, 15%, 60%)", 'white')
+            (f"hsl({hue}, 45%, 50%)", "white"),
+            (f"hsl({hue}, 30%, 55%)", "white"),
+            (f"hsl({hue}, 15%, 60%)", "white"),
         ]
 
     def _add_scroll_callback(self, obj: Viewable, what: str):
@@ -336,6 +337,15 @@ class ChatBox(CompositeWidget):
             **{what: code},
         )
 
+    def _link_disabled_loading(self, obj: Viewable):
+        """
+        Link the disabled and loading attributes of the chat box to the
+        given object.
+        """
+        for key in ["disabled", "loading"]:
+            setattr(obj, key, getattr(self, key))
+            self.link(obj, **{key: key})
+
     def _attach_input(self, box_objects: List, layout: Dict[str, str]) -> None:
         """
         Attach the input widgets to the chat box.
@@ -350,8 +360,9 @@ class ChatBox(CompositeWidget):
         self._send_button = Button(
             name="Send",
             button_type="default",
-            sizing_mode="stretch_both",
+            sizing_mode="stretch_width",
             max_width=100,
+            height=35,
         )
         self._send_button.on_click(self._enter_message)
 
@@ -362,6 +373,7 @@ class ChatBox(CompositeWidget):
 
         input_items = Tabs()
         for message_input_name, message_input in self._message_inputs.items():
+            self._link_disabled_loading(message_input)
             message_input.sizing_mode = "stretch_width"
             # for longer form messages, like TextArea / Ace, don't
             # submit when clicking away; only if they manually click
@@ -369,7 +381,9 @@ class ChatBox(CompositeWidget):
             if isinstance(message_input, TextInput):
                 message_input.param.watch(self._enter_message, "value")
                 self._add_scroll_callback(message_input, "value")
-            message_row = Row(message_input, self._send_button.clone(), **row_layout)
+            send_button = self._send_button.clone()
+            self._link_disabled_loading(send_button)
+            message_row = Row(message_input, send_button, **row_layout)
             input_items.append((message_input_name, message_row))
 
         if len(self._message_inputs) == 1:
@@ -404,7 +418,10 @@ class ChatBox(CompositeWidget):
         return user, message_contents
 
     def _instantiate_message_row(
-        self, user: str, message_contents: Union[Any, List[Any]], show_name: bool
+        self,
+        user: str,
+        message_contents: Union[Any, List[Any]],
+        show_name: bool,
     ) -> ChatRow:
         """
         Instantiate a ChatRow object.
@@ -418,7 +435,9 @@ class ChatBox(CompositeWidget):
         # try to get input color; if not generate one and save
         if user in self.message_colors:
             colors = self.message_colors[user]
-            background, color = colors if isinstance(colors, tuple) else (colors, 'black')
+            background, color = (
+                colors if isinstance(colors, tuple) else (colors, "black")
+            )
         elif self.message_hue:
             if len(self._default_colors) == 0:
                 self._default_colors = self._generate_default_hsl(
@@ -428,9 +447,9 @@ class ChatBox(CompositeWidget):
             self.message_colors[user] = (background, color)
         else:
             if user == self.primary_name:
-                background, color = ('rgb(99, 139, 226)', 'white')
+                background, color = ("rgb(99, 139, 226)", "white")
             else:
-                background, color = ('rgb(246, 246, 246)', 'black')
+                background, color = ("rgb(246, 246, 246)", "black")
             self.message_colors[user] = (background, color)
 
         # try to get input icon
@@ -465,15 +484,22 @@ class ChatBox(CompositeWidget):
 
         message_rows = []
         previous_user = None
-        for user_message in user_messages:
+        for i, user_message in enumerate(user_messages):
             user, message_contents = self._separate_user_message(user_message)
 
+            # only show name if it's a new user
             show_name = user != previous_user
             previous_user = user
 
             message_row = self._instantiate_message_row(
                 user, message_contents, show_name
             )
+
+            # try to rebuild liked status
+            if len(self._chat_log.objects) > i:
+                original_message_row = self._chat_log.objects[i]
+                if original_message_row.value == message_row.value:
+                    message_row.liked = original_message_row.liked
             message_rows.append(message_row)
 
         self._chat_log.objects = message_rows
@@ -513,19 +539,8 @@ class ChatBox(CompositeWidget):
         """
         if not isinstance(user_message, dict):
             raise ValueError(f"Expected a dictionary, but got {user_message}")
-        # need to keep it in sync, but do not want to trigger refresh_logs so append
         self.value.append(user_message)
-
-        if len(self._chat_log) == 0:
-            previous_user = None
-        else:
-            previous_user = self._chat_log[-1].name
-
-        user, message_contents = self._separate_user_message(user_message)
-        message_row = self._instantiate_message_row(
-            user, message_contents, show_name=user != previous_user,
-        )
-        self._chat_log.objects = [*self._chat_log.objects, message_row]
+        self.param.trigger("value")
 
     def extend(self, user_messages: List[Dict[str, Union[List[Any], Any]]]) -> None:
         """
@@ -535,8 +550,48 @@ class ChatBox(CompositeWidget):
         ---------
         user_messages (list): List of user messages to add.
         """
-        for user_message in user_messages:
-            self.append(user_message)
+        self.value.extend(user_messages)
+        self.param.trigger("value")
+
+    def insert(self, index: int, user_message: Dict[str, Union[List[Any], Any]]) -> None:
+        """
+        Inserts a message into the chat log at the given index.
+
+        Arguments
+        ---------
+        index (int): Index to insert the message at.
+        user_message (dict): Dictionary mapping user to message.
+        """
+        self.value.insert(index, user_message)
+        self.param.trigger("value")
+
+    def pop(self, index: int = -1) -> Dict[str, Union[List[Any], Any]]:
+        """
+        Pops the last message from the chat log.
+
+        Arguments
+        ---------
+        index (int): Index of the message to pop; defaults to the last message.
+
+        Returns
+        -------
+        user_message (dict): Dictionary mapping user to message.
+        """
+        value = self.value.pop(index)
+        self.param.trigger("value")
+        return value
+
+    def replace(self, index: int, user_message: Dict[str, Union[List[Any], Any]]):
+        """
+        Replaces a message in the chat log at the given index.
+
+        Arguments
+        ---------
+        index (int): Index to replace the message at.
+        user_message (dict): Dictionary mapping user to message.
+        """
+        self.value[index] = user_message
+        self.param.trigger("value")
 
     def clear(self) -> None:
         """
