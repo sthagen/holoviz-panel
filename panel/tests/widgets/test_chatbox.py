@@ -253,7 +253,7 @@ def test_chat_box_message_colors(document, comm):
     chat_box = ChatBox(value=value.copy(), message_colors={"user1": "red"})
     assert chat_box.message_colors["user1"] == "red"
     # random generated colors are hexcodes
-    assert chat_box.message_colors["user2"] == ("rgb(246, 246, 246)", "black")
+    assert chat_box.message_colors["user2"] == ("rgb(235, 235, 235)", "black")
 
 
 def test_chat_box_message_colors_with_hue(document, comm):
@@ -307,6 +307,20 @@ def test_chat_box_show_name(document, comm):
     chat_box = ChatBox(value=value.copy())
     assert chat_box.rows[0]._name.object == "user1"
     assert chat_box.rows[1]._name.object == "user2"
+    # no name shown for consecutive messages from the same user
+    assert chat_box.rows[2]._name is None
+
+
+def test_chat_box_show_names(document, comm):
+    # name should only show on the first message
+    value = [
+        {"user1": "Hello"},
+        {"user2": "Hi"},
+        {"user2": "Hi"},
+    ]
+    chat_box = ChatBox(value=value.copy(), show_names=False)
+    assert chat_box.rows[0]._name is None
+    assert chat_box.rows[1]._name is None
     # no name shown for consecutive messages from the same user
     assert chat_box.rows[2]._name is None
 
