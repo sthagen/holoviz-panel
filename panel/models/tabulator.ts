@@ -283,7 +283,7 @@ export class DataTabulatorView extends HTMLBoxView {
   tabulator: any;
   columns: Map<string, any> = new Map();
   _tabulator_cell_updating: boolean=false
-  _updating_page: boolean = true
+  _updating_page: boolean = false
   _updating_sort: boolean = false
   _selection_updating: boolean = false
   _initializing: boolean
@@ -341,6 +341,7 @@ export class DataTabulatorView extends HTMLBoxView {
       if (!this._updating_page)
         this.setPage()
     })
+    this.connect(p.visible.change, () => this.setVisibility())
     this.connect(p.max_page.change, () => this.setMaxPage())
     this.connect(p.frozen_rows.change, () => this.setFrozen())
     this.connect(p.sorters.change, () => this.setSorters())
@@ -411,7 +412,7 @@ export class DataTabulatorView extends HTMLBoxView {
     super.render()
     this._initializing = true
     const container = div({style: "display: contents;"})
-    const el = div({class: "pnx-tabulator", style: "width: 100%; height: 100%"})
+    const el = div({class: "pnx-tabulator", style: "width: 100%; height: 100%; visibility: hidden;"})
     container.appendChild(el)
     this.shadow_el.appendChild(container)
 
@@ -422,6 +423,8 @@ export class DataTabulatorView extends HTMLBoxView {
   }
 
   style_redraw(): void {
+    if (this.model.visible)
+      this.tabulator.element.style.visibility = 'visible';
     if (!this._initializing && !this._building)
       this.redraw()
   }
@@ -892,6 +895,12 @@ export class DataTabulatorView extends HTMLBoxView {
     }
   }
 
+  setVisibility(): void {
+    if (this.tabulator == null)
+      return
+    this.tabulator.element.style.visibility = this.model.visible ? 'visible' : 'hidden';
+  }
+
   updatePage(pageno: number): void {
     if (this.model.pagination === 'local' && this.model.page !== pageno) {
       this._updating_page = true
@@ -960,6 +969,7 @@ export class DataTabulatorView extends HTMLBoxView {
   }
 
   setPage(): void {
+    console.log(Math.min(this.model.max_page, this.model.page))
     this.tabulator.setPage(Math.min(this.model.max_page, this.model.page))
     if (this.model.pagination === "local") {
       this.renderChildren()
