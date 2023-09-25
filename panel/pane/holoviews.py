@@ -17,7 +17,7 @@ import param
 from bokeh.models import Range1d, Spacer as _BkSpacer
 from bokeh.themes.theme import Theme
 from packaging.version import Version
-from param.depends import register_depends_transform
+from param.parameterized import register_reference_transform
 from param.reactive import bind
 
 from ..io import state, unlocked
@@ -648,7 +648,8 @@ class HoloViews(PaneBase):
                     options = list(vals)
                     widget_type = widget_type or Select
                 default = vals[0] if dim.default is None else dim.default
-                widget_kwargs = dict(dict(name=dim.label, options=options, value=default), **widget_kwargs)
+                widget_name = dim.pprint_label
+                widget_kwargs = dict(dict(name=widget_name, options=options, value=default), **widget_kwargs)
                 widget = widget_type(**widget_kwargs)
             elif dim.range != (None, None):
                 start, end = dim.range
@@ -677,6 +678,10 @@ class HoloViews(PaneBase):
 
 
 class Interactive(PaneBase):
+
+    object = param.Parameter(default=None, allow_refs=False, doc="""
+        The object being wrapped, which will be converted to a
+        Bokeh model.""")
 
     priority: ClassVar[float | bool | None] = None
 
@@ -916,4 +921,4 @@ def _hvplot_interactive_transform(obj):
         return obj
     return bind(lambda *_: obj.eval(), *obj._params)
 
-register_depends_transform(_hvplot_interactive_transform)
+register_reference_transform(_hvplot_interactive_transform)

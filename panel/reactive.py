@@ -5,22 +5,19 @@ models rendered on the frontend.
 """
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import difflib
-import inspect
 import logging
 import re
 import sys
 import textwrap
-import types
 
 from collections import Counter, defaultdict, namedtuple
 from functools import lru_cache, partial
 from pprint import pformat
 from typing import (
-    TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, List, Mapping,
-    Optional, Set, Tuple, Type, Union,
+    TYPE_CHECKING, Any, Callable, ClassVar, Dict, List, Mapping, Optional, Set,
+    Tuple, Type, Union,
 )
 
 import numpy as np
@@ -30,8 +27,7 @@ from bokeh.core.property.descriptors import UnsetValueError
 from bokeh.model import DataModel
 from bokeh.models import ImportedStyleSheet
 from packaging.version import Version
-from param.depends import eval_function_with_deps
-from param.parameterized import ParameterizedMetaclass, Watcher
+from param.parameterized import ParameterizedMetaclass, Watcher, _syncing
 
 from .io.document import unlocked
 from .io.model import hold
@@ -46,7 +42,7 @@ from .models.reactive_html import (
 )
 from .util import (
     BOKEH_JS_NAT, HTML_SANITIZER, classproperty, edit_readonly, escape,
-    extract_dependencies, updating,
+    updating,
 )
 from .viewable import Layoutable, Renderable, Viewable
 
@@ -381,7 +377,8 @@ class Syncable(Renderable):
         try:
             with edit_readonly(self):
                 self_events = {k: v for k, v in events.items() if '.' not in k}
-                self.param.update(**self_events)
+                with _syncing(self, list(self_events)):
+                    self.param.update(**self_events)
             for k, v in self_events.items():
                 if '.' not in k:
                     continue
@@ -390,7 +387,8 @@ class Syncable(Renderable):
                 for sp in subpath:
                     obj = getattr(obj, sp)
                 with edit_readonly(obj):
-                    obj.param.update(**{p: v})
+                    with _syncing(obj, [p]):
+                        obj.param.update(**{p: v})
         except Exception:
             if len(events)>1:
                 msg_end = f" changing properties {pformat(events)} \n"
@@ -539,164 +537,10 @@ class Reactive(Syncable, Viewable):
     __abstract = True
 
     def __init__(self, refs=None, **params):
-        self._async_refs = {}
-        params, refs = self._extract_refs(params, refs)
+        for name, pobj in self.param.objects('existing').items():
+            enable_refs = name not in self._ignored_refs
+            pobj.allow_refs = enable_refs
         super().__init__(**params)
-        self._refs = refs
-        self._setup_refs(refs)
-
-    def _resolve_ref(self, pname, value):
-        from .depends import transform_dependency
-        ref = None
-        value = transform_dependency(value)
-        if isinstance(value, param.Parameter):
-            ref = value
-            value = getattr(value.owner, value.name)
-        elif hasattr(value, '_dinfo'):
-            ref = value
-            value = eval_function_with_deps(value)
-            if isinstance(value, Generator):
-                if pname == 'refs':
-                    v = {}
-                    for iv in value:
-                        v.update(iv)
-                else:
-                    for v in value:
-                        pass
-                value = v
-        if inspect.isawaitable(value) or isinstance(value, types.AsyncGeneratorType):
-            param.parameterized.async_executor(partial(self._async_ref, pname, value))
-            value = None
-        return ref, value
-
-    def _validate_ref(self, pname, value):
-        if pname == 'refs':
-            raise ValueError(
-                'refs should never be captured.'
-            )
-        pobj = self.param[pname]
-        pobj._validate(value)
-        if (isinstance(pobj, param.Dynamic) and callable(value) and
-            (hasattr(value, '_dinfo') or isinstance(value, param.reactive))):
-            raise ValueError(
-                'Dynamic parameters should not capture functions with dependencies.'
-            )
-
-    def _extract_refs(self, params, refs):
-        processed, out_refs = {}, {}
-        params['refs'] = refs
-        for pname, value in params.items():
-            if pname != 'refs' and (pname not in self.param or pname in self._ignored_refs):
-                processed[pname] = value
-                continue
-
-            # Only consider extracting reference if the provided value is not
-            # a valid value for the parameter (or no validation was defined)
-            try:
-                self._validate_ref(pname, value)
-            except Exception:
-                pass
-            else:
-                pobj = self.param[pname]
-                if type(pobj) is not param.Parameter:
-                    processed[pname] = value
-                    continue
-
-            # Resolve references, allowing for Widget, Parameter and
-            # objects with dependencies
-            ref, value = self._resolve_ref(pname, value)
-            if ref is not None:
-                out_refs[pname] = ref
-            if pname == 'refs':
-                if value is not None:
-                    processed.update(value)
-            else:
-                processed[pname] = value
-        return processed, out_refs
-
-    async def _async_ref(self, pname, awaitable):
-        if pname in self._async_refs:
-            self._async_refs[pname].cancel()
-        self._async_refs[pname] = task = asyncio.current_task()
-        curdoc = state.curdoc
-        has_context = bool(curdoc.session_context) if curdoc else False
-        if has_context:
-            curdoc.on_session_destroyed(lambda context: task.cancel())
-        try:
-            if isinstance(awaitable, types.AsyncGeneratorType):
-                async for new_obj in awaitable:
-                    if pname == 'refs':
-                        self.param.update(new_obj)
-                    else:
-                        self.param.update({pname: new_obj})
-            elif pname == 'refs':
-                self.param.update(await awaitable)
-            else:
-                self.param.update({pname: await awaitable})
-        except Exception as e:
-            if not curdoc or (has_context and curdoc.session_context):
-                raise e
-        finally:
-            del self._async_refs[pname]
-
-    def _sync_refs(self, *events):
-        from .config import config
-        if config.loading_indicator:
-            self.loading = True
-        updates = {}
-        generators = {}
-        for pname, p in self._refs.items():
-            if isinstance(p, param.Parameter):
-                deps = (p,)
-            else:
-                deps = extract_dependencies(p)
-
-            # Skip updating value if dependency has not changed
-            if not any((dep.owner is e.obj and dep.name == e.name) for dep in deps for e in events):
-                continue
-            if isinstance(p, param.Parameter):
-                new_val = getattr(p.owner, p.name)
-            else:
-                new_val = eval_function_with_deps(p)
-
-            if inspect.isawaitable(new_val) or isinstance(new_val, types.AsyncGeneratorType):
-                param.parameterized.async_executor(partial(self._async_ref, pname, new_val))
-                continue
-
-            if isinstance(new_val, Generator):
-                generators[pname] = new_val
-                new_val = next(new_val)
-
-            if pname == 'refs':
-                updates.update(new_val)
-            else:
-                updates[pname] = new_val
-
-        if config.loading_indicator:
-            updates['loading'] = False
-        with param.edit_constant(self):
-            self.param.update(updates)
-        for pname, gen in generators.items():
-            for v in gen:
-                if pname == 'refs':
-                    updates.update(v)
-                else:
-                    updates[pname] = v
-                with param.edit_constant(self):
-                    self.param.update(updates)
-
-    def _setup_refs(self, refs):
-        groups = defaultdict(list)
-        for pname, p in refs.items():
-            if isinstance(p, param.Parameter):
-                groups[p.owner].append(p.name)
-            else:
-                for sp in extract_dependencies(p):
-                    groups[sp.owner].append(sp.name)
-        for owner, pnames in groups.items():
-            self._internal_callbacks.append(
-                owner.param.watch(self._sync_refs, list(set(pnames)))
-            )
 
     #----------------------------------------------------------------
     # Private API
