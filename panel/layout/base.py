@@ -13,6 +13,7 @@ from typing import (
 import param
 
 from bokeh.models import Row as BkRow
+from param.parameterized import iscoroutinefunction, resolve_ref
 
 from ..io.model import hold
 from ..io.resources import CDN_DIST
@@ -444,11 +445,17 @@ class ListLike(param.Parameterized):
         new_objects.append(panel(obj))
         self.objects = new_objects
 
-    def clear(self) -> None:
+    def clear(self) -> List[Viewable]:
         """
         Clears the objects on this layout.
+
+        Returns
+        -------
+        objects (list[Viewable]): List of cleared objects.
         """
+        objects = self.objects
         self.objects = []
+        return objects
 
     def extend(self, objects: Iterable[Any]) -> None:
         """
@@ -462,6 +469,20 @@ class ListLike(param.Parameterized):
         new_objects = list(self)
         new_objects.extend(list(map(panel, objects)))
         self.objects = new_objects
+
+    def index(self, object) -> int:
+        """
+        Returns the integer index of the supplied object in the list of objects.
+
+        Arguments
+        ---------
+        obj (object): Panel component to look up the index for.
+
+        Returns
+        -------
+        index (int): Integer index of the object in the layout.
+        """
+        return self.objects.index(object)
 
     def insert(self, index: int, obj: Any) -> None:
         """
@@ -781,8 +802,9 @@ class ListPanel(ListLike, Panel):
                                  "not both." % type(self).__name__)
             params['objects'] = [panel(pane) for pane in objects]
         elif 'objects' in params:
-            if not hasattr(params['objects'], '_dinfo'):
-                params['objects'] = [panel(pane) for pane in params['objects']]
+            objects = params['objects']
+            if not resolve_ref(objects) or iscoroutinefunction(objects):
+                params['objects'] = [panel(pane) for pane in objects]
         super(Panel, self).__init__(**params)
 
     @property
