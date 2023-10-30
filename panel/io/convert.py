@@ -26,7 +26,7 @@ from .. import __version__, config
 from ..util import base_version, escape
 from .loading import LOADING_INDICATOR_CSS_CLASS
 from .markdown import build_single_handler_application
-from .mime_render import find_imports
+from .mime_render import find_requirements
 from .resources import (
     BASE_TEMPLATE, CDN_DIST, CDN_ROOT, DIST_DIR, INDEX_TEMPLATE, Resources,
     _env as _pn_env, bundle_resources, loading_css, set_resource_mode,
@@ -41,8 +41,8 @@ WORKER_HANDLER_TEMPLATE  = _pn_env.get_template('pyodide_handler.js')
 PANEL_ROOT = pathlib.Path(__file__).parent.parent
 BOKEH_VERSION = base_version(bokeh.__version__)
 PY_VERSION = base_version(__version__)
-PYODIDE_VERSION = 'v0.23.4'
-PYSCRIPT_VERSION = '2023.03.1'
+PYODIDE_VERSION = 'v0.24.1'
+PYSCRIPT_VERSION = '2023.05.1'
 PANEL_LOCAL_WHL = DIST_DIR / 'wheels' / f'panel-{__version__.replace("-dirty", "")}-py3-none-any.whl'
 BOKEH_LOCAL_WHL = DIST_DIR / 'wheels' / f'bokeh-{BOKEH_VERSION}-py3-none-any.whl'
 PANEL_CDN_WHL = f'{CDN_DIST}wheels/panel-{PY_VERSION}-py3-none-any.whl'
@@ -235,7 +235,7 @@ def script_to_html(
         )
 
     if requirements == 'auto':
-        requirements = find_imports(source)
+        requirements = find_requirements(source)
     elif isinstance(requirements, str) and pathlib.Path(requirements).is_file():
         requirements = pathlib.Path(requirements).read_text(encoding='utf-8').splitlines()
         try:
