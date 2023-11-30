@@ -2,7 +2,7 @@
 
 See [the HoloViz blog](https://blog.holoviz.org/#category=panel) for a visual summary of the major features added in each release.
 
-## Version 1.3.3
+## Version 1.3.4
 
 Date: 2023-11-29
 
@@ -23,6 +23,7 @@ This micro-release primarily addresses two important regressions related to the 
 - Ensure `Tabulator` styler subset logic is not lost ([#5938](https://github.com/holoviz/panel/pull/5938))
 - Fix regression in OAuth when `id_token` does not contain user key ([#5939](https://github.com/holoviz/panel/pull/5939))
 - Ensure Vega/Altair plot with responsive width/height respects fixed width/height value when set ([#5940](https://github.com/holoviz/panel/pull/5940))
+- Ensure `BrowserInfo` is imported by default ([#5942](https://github.com/holoviz/panel/pull/5942))
 
 ### Documentation
 
