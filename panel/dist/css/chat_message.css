@@ -54,6 +54,7 @@
 }
 
 .center {
+  width: calc(100% - 15px); /* Without this, words start on a new line */
   margin-right: 10px; /* Space for reaction icons */
   padding: 0px;
 }
@@ -103,7 +104,6 @@
   display: flex;
   flex-direction: column;
   align-items: start;
-  justify-content: end;
   width: fit-content;
   margin-block: 0px;
   margin-inline: 2px;
