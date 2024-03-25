@@ -29,8 +29,9 @@ from ..io.model import add_to_doc
 from ..io.notebook import render_template
 from ..io.notifications import NotificationArea
 from ..io.resources import (
-    BUNDLE_DIR, CDN_DIST, ResourceComponent, _env, component_resource_path,
-    get_dist_path, loading_css, parse_template, resolve_custom_path, use_cdn,
+    BUNDLE_DIR, CDN_DIST, JS_VERSION, ResourceComponent, _env,
+    component_resource_path, get_dist_path, loading_css, parse_template,
+    resolve_custom_path, use_cdn,
 )
 from ..io.save import save
 from ..io.state import curdoc_locked, state
@@ -142,7 +143,9 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
         self._design = self.design(theme=self.theme)
 
     def _update_vars(self, *args) -> None:
-        self._render_variables['template_resources'] = self.resolve_resources()
+        """
+        Updates the render variables before the template is rendered.
+        """
 
     def _build_layout(self) -> Column:
         str_repr = Str(repr(self))
@@ -210,7 +213,7 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
 
         # Add all render items to the document
         objs, models = [], []
-        sizing_modes = {}
+        stylesheets, sizing_modes = {}, {}
         tracked_models = set()
         for name, (obj, tags) in self._render_items.items():
 
@@ -228,6 +231,11 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
                 # pre-processor correctly operates on fake root
                 for sub in obj.select(Viewable):
                     submodel = sub._models.get(mref)
+                    for stylesheet in getattr(sub, '_stylesheets', []):
+                        if not stylesheet.endswith('.css'):
+                            continue
+                        sts_name = f'extra_{os.path.basename(stylesheet)}'
+                        stylesheets[sts_name] = stylesheet
                     if submodel is None:
                         continue
                     sub._models[ref] = submodel
@@ -264,6 +272,8 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
             document.template = self.template
 
         self._update_vars()
+        resources = self.resolve_resources(extras={'css': stylesheets})
+        document._template_variables['template_resources'] = resources
         document._template_variables['sizing_modes'] = sizing_modes
         document._template_variables.update(self._render_variables)
         return document
@@ -318,7 +328,11 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
     # Public API
     #----------------------------------------------------------------
 
-    def resolve_resources(self, cdn: bool | Literal['auto'] = 'auto') -> ResourcesType:
+    def resolve_resources(
+        self,
+        cdn: bool | Literal['auto'] = 'auto',
+        extras: dict[str, dict[str, str]] | None = None
+    ) -> ResourcesType:
         """
         Resolves the resources required for this template component.
 
@@ -328,13 +342,16 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
             Whether to load resources from CDN or local server. If set
             to 'auto' value will be automatically determine based on
             global settings.
+        extras: dict[str, dict[str, str]] | None
+            Additional resources to add to the bundle. Valid resource
+            types include js, js_modules and css.
 
         Returns
         -------
         Dictionary containing JS and CSS resources.
         """
         cls = type(self)
-        resource_types = super().resolve_resources(cdn=cdn)
+        resource_types = super().resolve_resources(cdn=cdn, extras=extras)
         js_files = resource_types['js']
         js_modules = resource_types['js_modules']
         css_files = resource_types['css']
@@ -344,8 +361,9 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
         name = clsname.lower()
         cdn = use_cdn() if cdn == 'auto' else cdn
         dist_path = get_dist_path(cdn=cdn)
+        version_suffix = f'?v={JS_VERSION}'
 
-        resource_types['css']['loading'] = f'{dist_path}css/loading.css'
+        css_files['loading'] = f'{dist_path}css/loading.css{version_suffix}'
         raw_css.extend(list(self.config.raw_css) + [loading_css(
             config.loading_spinner, config.loading_color, config.loading_max_height
         )])
@@ -387,7 +405,7 @@ class BaseTemplate(param.Parameterized, MimeRenderMixin, ServableMixin, Resource
 
             css_file = os.path.basename(css)
             if (BUNDLE_DIR / tmpl_name / css_file).is_file():
-                css_files[f'base_{css_file}'] = dist_path + f'bundled/{tmpl_name}/{css_file}'
+                css_files[f'base_{css_file}'] = f'{dist_path}bundled/{tmpl_name}/{css_file}{version_suffix}'
             elif isurl(css):
                 css_files[f'base_{css_file}'] = css
             elif resolve_custom_path(self, css):
