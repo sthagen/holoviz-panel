@@ -825,7 +825,7 @@ def get_server(
     oauth_encryption_key: Optional[str] = None,
     oauth_jwt_user: Optional[str] = None,
     oauth_refresh_tokens: Optional[bool] = None,
-    oauth_guest_endpoints: Optional[bool] = None,
+    oauth_guest_endpoints: Optional[list[str]] = None,
     oauth_optional: Optional[bool] = None,
     login_endpoint: Optional[str] = None,
     logout_endpoint: Optional[str] = None,
@@ -1021,7 +1021,8 @@ def get_server(
             logout_endpoint=logout_endpoint,
             login_template=login_template,
             logout_template=logout_template,
-            error_template=oauth_error_template
+            error_template=oauth_error_template,
+            guest_endpoints=oauth_guest_endpoints,
         )
     if oauth_key:
         config.oauth_key = oauth_key # type: ignore
