@@ -35,8 +35,7 @@ from param.parameterized import (
     resolve_ref, resolve_value,
 )
 
-from .io.document import unlocked
-from .io.model import hold
+from .io.document import hold, unlocked
 from .io.notebook import push
 from .io.resources import (
     CDN_DIST, loading_css, patch_stylesheet, process_raw_css,
@@ -215,7 +214,7 @@ class Syncable(Renderable):
             stylesheets += properties['stylesheets']
             wrapped = []
             for stylesheet in stylesheets:
-                if isinstance(stylesheet, str) and stylesheet.split('?')[0].endswith('.css'):
+                if isinstance(stylesheet, str) and (stylesheet.split('?')[0].endswith('.css') or stylesheet.startswith('http')):
                     cache = (state._stylesheets if state.curdoc else {}).get(state.curdoc, {})
                     if stylesheet in cache:
                         stylesheet = cache[stylesheet]
