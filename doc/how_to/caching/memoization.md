@@ -62,9 +62,10 @@ pn.Column(select, pn.widgets.Tabulator(fetch_data, page_size=10))
 ## Caching Methods with Dependencies
 
 ```{pyodide}
+import param
+
 class DataExplorer(pn.viewable.Viewer):
     dataset = param.Selector(objects=DATASETS)
-
 
     @pn.cache
     @param.depends("dataset")
@@ -79,7 +80,7 @@ DataExplorer().servable()
 
 ## Disk Caching
 
-If you have `diskcache` installed, you can also cache the results to disk by setting `to_disk=True`. The `diskcache` library will then cache the value to the supplied `cache_path` (defaulting to `./cache`). Making use of disk caching allows you to cache items even if the server is restarted.
+If you have `diskcache` installed, you can also cache the results to disk by setting `to_disk=True`. The `diskcache` library will then cache the value to the supplied `cache_path` (defaulting to `./cache`). Making use of disk caching allows you to cache items even if the server is restarted. You can configure the `cache_path` inline or globally by setting `pn.extension(cache_path=...)` or `pn.config.cache_path = ...`.
 
 ## Clearing the Cache
 

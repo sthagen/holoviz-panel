@@ -327,7 +327,7 @@ class ReactiveESM(ReactiveCustomBase, metaclass=ReactiveESMMetaclass):
         return []
 
     @classmethod
-    def _esm_path(cls, compiled: bool = True) -> os.PathLike | None:
+    def _esm_path(cls, compiled: bool | Literal['compiling'] = True) -> os.PathLike | None:
         if compiled or not cls._esm:
             bundle_path = cls._bundle_path
             if bundle_path:
@@ -580,18 +580,26 @@ class ReactiveESM(ReactiveCustomBase, metaclass=ReactiveESMMetaclass):
             data_msg.update(children)
             model_msg['children'] = list(children)
 
-        with hold(doc):
+
+        ref = root.ref['id']
+        prev_changing = self._changing.get(ref, [])
+        try:
             update = Panel._batch_update
             Panel._batch_update = True
-            try:
+            with hold(doc):
+                changing = []
                 with freeze_doc(doc, model, msg, force=update_children):
-                    self._set_on_model(model_msg, root, model)
-                    self._set_on_model(data_msg, root, model.data)
-                    ref = root.ref['id']
+                    changing += self._set_on_model(model_msg, root, model)
+                    changing += self._set_on_model(data_msg, root, model.data)
                     if update and update_children and ref in state._views:
                         state._views[ref][0]._preprocess(root, self, old_children)
-            finally:
-                Panel._batch_update = update
+                self._changing[ref] = changing
+        finally:
+            Panel._batch_update = update
+            if prev_changing:
+                self._changing[ref] = prev_changing
+            elif ref in self._changing:
+                del self._changing[ref]
 
     def _handle_msg(self, data: Any) -> None:
         """
