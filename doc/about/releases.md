@@ -4,13 +4,14 @@ See [the HoloViz blog](https://blog.holoviz.org/#category=panel) for a visual su
 
 ## Version 1.8.0
 
-This release brings a wide range of new features, enhancements, and compatibility improvements. Highlights include support for `JSCode` in ECharts and Tabulator, reworked WebSocket reconnection, expanded format and resource handling, and numerous bug fixes to improve stability across components and templates. It also includes compatibility updates for **Bokeh 3.8** and several improvements for use in **Pyodide**, **JupyterLite**, and **authentication-based deployments**. Many thanks to our returning contributors @dalthviz and @etihwo, a very warm welcome to our new contributor @c-meier and as usual many thanks to our core team including @maximlt, @hoxbro, @ahuang11, @MarcSkovMadsen and @philippjfr.
+This release brings a wide range of new features, enhancements, and compatibility improvements. Highlights include support for `JSCode` in ECharts and Tabulator, reworked WebSocket reconnection, and the ability to bundle resources into WASM apps, and numerous bug fixes to improve stability across components and templates. It also includes compatibility updates for **Bokeh 3.8** and several improvements for use in **Pyodide**, **JupyterLite**, and **authentication-based deployments**. Many thanks to our returning contributors @dalthviz and @etihwo, a very warm welcome to our new contributors @c-meier and @flxmr and as usual many thanks to our core team including @maximlt, @hoxbro, @ahuang11, @MarcSkovMadsen and @philippjfr.
 
 ### 🚀 Features
 
 - Support for inline JavaScript functions in `ECharts` and `Tabulator` via `JSCode` wrapper ([#8162](https://github.com/holoviz/panel/pull/8162))
 - Add support for reconnecting to a session after network disruption ([#8120](https://github.com/holoviz/panel/pull/8120))
 - Add support for `AVIF` images ([#8164](https://github.com/holoviz/panel/pull/8164))
+- Add support for bundling local resources into WASM apps ([#8181](https://github.com/holoviz/panel/pull/8181))
 
 ### ✨ Enhancements
 
@@ -43,6 +44,14 @@ This release brings a wide range of new features, enhancements, and compatibilit
 
 ### 📦 Compatibility & Infrastructure
 
+- Update component versions ([#7447](https://github.com/holoviz/panel/pull/7447))
+  - `DeckGL` version from 9.0.20 to 9.1.14
+  - `ECharts` version from 5.6.0 to 6.0.0
+  - `KaTeX` version from 0.6.0 to 0.16.22
+  - `Perspective` version from 3.7.4 to 3.8.0
+  - `Plotly` version from 3.0.1 to 3.1.0
+  - `Vega` version from 5 to 6.1.2 and vega-lite dependency from 5 to 6.3.0
+  - `Vizzu` version from 0.15 to 0.17.1
 - Drop support for Bokeh 3.5 and 3.6 ([#8116](https://github.com/holoviz/panel/pull/8116))
 - Full compatibility with **Bokeh 3.8** ([#8160](https://github.com/holoviz/panel/pull/8160))
 
