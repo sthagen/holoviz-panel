@@ -21,6 +21,7 @@ This release brings a wide range of new features, enhancements, and compatibilit
 - Improve uniformity and consistency in `Tabulator` column configuration ([#8127](https://github.com/holoviz/panel/pull/8127))
 - Trigger `param.Event` correctly on value change ([#8148](https://github.com/holoviz/panel/pull/8148))
 - Allow registering external `extension_cdn` for JS resources ([#8175](https://github.com/holoviz/panel/pull/8175))
+- Allow overriding the `default_widgets` on `HoloViews` pane ([#8186](https://github.com/holoviz/panel/pull/8186))
 
 ### 🐛 Bug Fixes
 
@@ -39,6 +40,11 @@ This release brings a wide range of new features, enhancements, and compatibilit
 - Fix `Tabulator` filter behavior with list-based filters ([#8169](https://github.com/holoviz/panel/pull/8169))
 - Allow `Card` to overflow container ([#8170](https://github.com/holoviz/panel/pull/8170))
 - Fix `pyodide` model syncing ([#8174](https://github.com/holoviz/panel/pull/8174))
+
+### ⚠️ Deprecations
+
+- Removed `panel.io.model.hold` (was moved to `panel.io.document.hold` in 1.6.0) ([#8188](https://github.com/holoviz/panel/pull/8188))
+- Deprecated `panel.chat.langchain.PanelCallbackHandler` (to be removed in 1.9.0) ([#8188](https://github.com/holoviz/panel/pull/8188))
 
 ### 📦 Compatibility & Infrastructure
 
