@@ -56,6 +56,8 @@ if TYPE_CHECKING:
 
     ExportSpec = dict[str, list[str | tuple[str, ...]]]
 
+_IGNORED_ESM_PROPERTIES = ('js_event_callbacks', 'esm_constants', 'js_property_callbacks', 'subscribed_events', 'syncable')
+
 
 class PyComponent(Viewable, Layoutable):
     '''
@@ -444,12 +446,15 @@ class ReactiveESM(ReactiveCustomBase, metaclass=ReactiveESMMetaclass):
 
     @property
     def _linked_properties(self) -> tuple[str, ...]:
-        return tuple(p for p in self._data_model.properties() if p != 'js_property_callbacks')
+        return tuple(
+            p for p in self._data_model.properties()
+            if p not in _IGNORED_ESM_PROPERTIES and not isinstance(self.param[p], (Child, Children))
+        )
 
     def _get_properties(self, doc: Document | None) -> dict[str, Any]:
         props = super()._get_properties(doc)
         cls = type(self)
-        data_params = {}
+        data_props = {}
         # Split data model properties from ESM model properties
         # Note that inherited parameters are generally treated
         # as ESM model properties unless their type has changed
@@ -460,18 +465,17 @@ class ReactiveESM(ReactiveCustomBase, metaclass=ReactiveESMMetaclass):
              and type(Reactive.param[p]) is type(cls.param[p]))
         ]
         events = []
-        for k, v in self.param.values().items():
+        for k in self.param.values():
             p = self.param[k]
             if is_viewable_param(p) or type(self)._property_mapping.get(k, "") is None:
                 props.pop(k, None)
                 continue
-            elif (k in ignored and k != 'name') or ((p.precedence or 0) < 0):
+            elif k not in props or (k in ignored and k != 'name') or ((p.precedence or 0) < 0):
                 continue
-            if k in props:
-                v = props.pop(k)
+            v = props.pop(k)
             if isinstance(p, param.Event):
                 events.append(k)
-            data_params[k] = v
+            data_props[k] = v
         bundle_path = self._bundle_path
         importmap = self._process_importmap()
         is_session = False
@@ -487,7 +491,6 @@ class ReactiveESM(ReactiveCustomBase, metaclass=ReactiveESMMetaclass):
                 bundle_hash = hashlib.sha256(str(bundle_path).encode('utf-8')).hexdigest()
         else:
             bundle_hash = None
-        data_props = self._process_param_change(data_params)
         data_props['esm_constants'] = self._constants
         props.update({
             'bundle': bundle_hash,
