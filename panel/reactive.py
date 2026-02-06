@@ -19,6 +19,7 @@ import uuid
 from collections import Counter, defaultdict, namedtuple
 from collections.abc import Callable, Mapping, Sequence
 from functools import lru_cache, partial
+from html import escape
 from pprint import pformat
 from typing import (
     TYPE_CHECKING, Any, ClassVar, TypeAlias,
@@ -40,7 +41,7 @@ from param.parameterized import (
 from .io.document import hold, unlocked
 from .io.notebook import push
 from .io.resources import (
-    CDN_DIST, loading_css, patch_stylesheet, process_raw_css,
+    CDN_DIST, get_dist_path, loading_css, patch_stylesheet, process_raw_css,
     resolve_stylesheet,
 )
 from .io.state import set_curdoc, state
@@ -48,7 +49,7 @@ from .models.reactive_html import (
     DOMEvent, ReactiveHTML as _BkReactiveHTML, ReactiveHTMLParser,
 )
 from .util import (
-    HTML_SANITIZER, classproperty, edit_readonly, escape, updating,
+    HTML_SANITIZER, classproperty, edit_readonly, updating,
 )
 from .util.checks import import_available
 from .viewable import (
@@ -216,7 +217,7 @@ class Syncable(Renderable):
             from .config import config
             stylesheets = [loading_css(
                 config.loading_spinner, config.loading_color, config.loading_max_height
-            ), f'{CDN_DIST}css/loading.css']
+            ), f'{get_dist_path()}css/loading.css']
             stylesheets += process_raw_css(config.raw_css)
             stylesheets += config.css_files
             stylesheets += [
