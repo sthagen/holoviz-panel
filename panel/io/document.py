@@ -45,12 +45,13 @@ logger = logging.getLogger(__name__)
 #---------------------------------------------------------------------
 
 GC_DEBOUNCE = 5
+_HOLD_LOCK: WeakKeyDictionary[Document, threading.Lock] = WeakKeyDictionary()
 _WRITE_FUTURES: WeakKeyDictionary[Document, list[Future]] = WeakKeyDictionary()
 _WRITE_MSGS: WeakKeyDictionary[Document, dict[ServerConnection, list[Message]]] = WeakKeyDictionary()
 _WRITE_BLOCK: WeakKeyDictionary[Document, bool] = WeakKeyDictionary()
 
 _panel_last_cleanup = None
-_write_tasks: list[asyncio.Task] = []
+_write_tasks: WeakKeyDictionary[Document, list[asyncio.Task]] = WeakKeyDictionary()
 
 extra_socket_handlers: dict[type, Callable[[t.Any], None]] = {}
 
@@ -83,8 +84,10 @@ class MockSessionContext(SessionContext):
         return Request(headers={}, cookies={}, arguments={})
 
 def _cleanup_task(task):
-    if task in _write_tasks:
-        _write_tasks.remove(task)
+    for tasks in _write_tasks.values():
+        if task in tasks:
+            tasks.remove(task)
+            break
 
 def _dispatch_events(doc: Document, events: list[DocumentChangedEvent]) -> None:
     """
@@ -159,7 +162,7 @@ def _dispatch_write_task(doc, func, *args, **kwargs):
     """
     try:
         task = asyncio.ensure_future(func(*args, **kwargs))
-        _write_tasks.append(task)
+        _write_tasks.setdefault(doc, []).append(task)
         task.add_done_callback(_cleanup_task)
     except RuntimeError:
         doc.add_next_tick_callback(partial(func, *args, **kwargs))
@@ -169,6 +172,8 @@ async def _dispatch_msgs(doc):
     Writes messages to a socket, ensuring that the write_lock is not
     set, otherwise re-schedules the write task on the event loop.
     """
+    if doc not in _WRITE_BLOCK:
+        return
     from tornado.websocket import WebSocketHandler
     remaining = {}
     futures = []
@@ -242,6 +247,14 @@ def _destroy_document(self, session):
     # Clear periodic callbacks
     for cb in state._periodic.get(self, []):
         cb.stop()
+
+    # Cancel any pending write tasks for this document
+    _WRITE_MSGS.pop(self, None)
+    _WRITE_BLOCK.pop(self, None)
+    for future in _WRITE_FUTURES.pop(self, []):
+        future.cancel()
+    for task in _write_tasks.pop(self, []):
+        task.cancel()
 
     # Clean up pn.state to avoid tasks getting executed on dead session
     for attr in dir(state):
@@ -574,17 +587,25 @@ def hold(
     if doc is None:
         yield
         return
+    if doc not in _HOLD_LOCK:
+        _HOLD_LOCK[doc] = threading.Lock()
+    hold_lock = _HOLD_LOCK[doc]
     with ExitStack() as stack:
         if freeze and hasattr(doc, 'models'):
             stack.enter_context(doc.models.freeze())
         threaded = state._current_thread != state._thread_id
         held = doc.callbacks.hold_value
+        we_held = False
         try:
             if policy is None:
                 doc.unhold()
                 yield
             elif threaded:
-                doc.hold(policy)
+                with hold_lock:
+                    held = doc.callbacks.hold_value
+                    if not held:
+                        doc.hold(policy)
+                        we_held = True
                 yield
             else:
                 with unlocked(policy=policy):
@@ -592,17 +613,24 @@ def hold(
                         doc.hold(policy)
                     yield
         finally:
-            if held:
+            if policy is None:
+                pass
+            elif threaded:
+                if not held or we_held:
+                    def _unhold(lock=hold_lock, doc=doc):
+                        with lock:
+                            doc.unhold()
+                    with hold_lock:
+                        doc.callbacks._hold = None
+                        doc.add_next_tick_callback(_unhold)
+                        doc.callbacks._hold = policy
+            elif held:
                 doc.callbacks._hold = held
             elif comm is not None:
                 from .notebook import push
                 push(doc, comm)
             elif not state._connected.get(doc):
                 doc.callbacks._hold = None
-            elif threaded:
-                doc.callbacks._hold = None
-                doc.add_next_tick_callback(doc.unhold)
-                doc.callbacks._hold = policy
             else:
                 doc.unhold()
 
