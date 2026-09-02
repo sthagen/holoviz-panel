@@ -16,13 +16,14 @@ import typing as t
 
 from collections import Counter, defaultdict
 from collections.abc import (
-    Callable, Coroutine, Hashable, Iterator, Iterator as TIterator,
+    Awaitable, Callable, Coroutine, Hashable, Iterator, Iterator as TIterator,
 )
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from functools import partial, wraps
 from urllib.parse import urljoin
-from weakref import WeakKeyDictionary
+from weakref import WeakKeyDictionary, WeakSet
 
 import param
 
@@ -37,12 +38,13 @@ _state_logger = logging.getLogger('panel.state')
 
 if t.TYPE_CHECKING:
     from concurrent.futures import Future
+    from types import ModuleType
 
     from bokeh.application.application import SessionContext
     from bokeh.document import Document
     from bokeh.model import Model
     from bokeh.models import ImportedStyleSheet
-    from bokeh.server.contexts import BokehSessionContext
+    from bokeh.server.contexts import ApplicationContext, BokehSessionContext
     from bokeh.server.session import ServerSession
     from IPython.display import DisplayHandle
     from param.parameterized import Event, Parameterized
@@ -86,6 +88,28 @@ def curdoc_locked() -> Document | None:
     return doc
 
 class _Undefined: pass
+
+
+_tasks: set[asyncio.Task] = set()
+
+
+class _SharedThreadPoolExecutor(ThreadPoolExecutor):
+    """
+    Thread pool used both by Panel's ``state.execute(schedule='thread')`` and,
+    when installed as an event loop's default executor, by Bokeh's
+    ``asyncio.to_thread`` offloading. It is process-global and outlives
+    individual event loops, so implicit shutdown driven by loop finalization
+    (``run_until_complete`` / ``asyncio.run`` teardown calls
+    ``shutdown_default_executor``) must not tear it down. Shutdown only happens
+    explicitly via ``config._set_thread_pool`` / ``state.reset`` by passing
+    ``_shared=False``.
+    """
+
+    def shutdown(self, wait=True, *, cancel_futures=False, _shared=True):
+        if _shared:
+            # Ignore implicit shutdown from a loop that borrowed this pool.
+            return None
+        return super().shutdown(wait=wait, cancel_futures=cancel_futures)
 
 Tat: t.TypeAlias = dt.datetime | Callable[[dt.datetime], dt.datetime] | TIterator[dt.datetime]
 
@@ -138,8 +162,11 @@ class _state(param.Parameterized):
     _thread_id_: t.ClassVar[WeakKeyDictionary[Document, int]] = WeakKeyDictionary()
     _thread_pool = None
 
+    # The event loops the thread pool was installed on as default executor
+    _executor_loops: t.ClassVar[WeakSet[asyncio.AbstractEventLoop]] = WeakSet()
+
     # Admin application (remove in Panel 1.0 / Bokeh 3.0)
-    _admin_context = None
+    _admin_context: ApplicationContext | None = None
 
     # Jupyter communication
     _comm_manager: type[_CommManager] = _CommManager
@@ -188,8 +215,10 @@ class _state(param.Parameterized):
     _loaded: t.ClassVar[WeakKeyDictionary[Document, bool]] = WeakKeyDictionary()
     _connected: t.ClassVar[WeakKeyDictionary[Document, bool]] = WeakKeyDictionary()
 
-    # Module that was run during setup
-    _setup_module = None
+    # Module that was run during setup and the callback that runs its
+    # server lifecycle hooks once the server is started
+    _setup_module: ModuleType | None = None
+    _setup_file_callback: Callable[[], None] | None = None
 
     # Scheduled callbacks
     _scheduled: t.ClassVar[dict[str, tuple[TIterator[int] | None, Callable[[], None]]]] = {}
@@ -249,13 +278,83 @@ class _state(param.Parameterized):
             return "state(servers=[])"
         return "state(servers=[\n  {}\n])".format(",\n  ".join(server_info))
 
+    def _document_loop(self, doc: Document | None) -> IOLoop | None:
+        """
+        Resolves the server event loop associated with a Document via its
+        session context. Unlike ``IOLoop.current()`` this returns the loop
+        the server is actually running on even when called from a worker
+        thread (e.g. when Bokeh initializes a Document off the event
+        loop).
+        """
+        if doc is None:
+            return None
+        session_context = getattr(doc, 'session_context', None)
+        server_context = getattr(session_context, 'server_context', None)
+        application_context = getattr(server_context, 'application_context', None)
+        return getattr(application_context, 'io_loop', None)
+
     @property
     def _ioloop(self) -> IOLoop | asyncio.AbstractEventLoop:
         if state._is_pyodide:
             return asyncio.get_running_loop()
-        else:
-            from tornado.ioloop import IOLoop
-            return IOLoop.current()
+        loop = self._document_loop(self.curdoc)
+        if loop is not None:
+            return loop
+        from tornado.ioloop import IOLoop
+        return IOLoop.current()
+
+    @property
+    def _on_loop_thread(self) -> bool:
+        """
+        Whether the calling thread is the server event loop thread. Writes
+        to Bokeh models and sockets are only safe on this thread.
+        """
+        if self._is_pyodide:
+            return True
+        loop = self._document_loop(self.curdoc)
+        asyncio_loop = getattr(loop, 'asyncio_loop', loop)
+        if asyncio_loop is None:
+            # No server loop resolvable (e.g. notebook/pyodide/test contexts);
+            # preserve legacy behaviour and treat as on-loop.
+            return True
+        try:
+            return asyncio.get_running_loop() is asyncio_loop
+        except RuntimeError:
+            return False
+
+    @property
+    def _document_lock_held(self) -> bool:
+        """
+        Whether the calling thread is executing inside a locked Bokeh
+        session callback even though it is not the server event loop
+        thread itself. Bokeh dispatches such callbacks (e.g.
+        next-tick callbacks) via `loop.run_in_executor`, so the callback
+        body runs on a worker thread while the session's document lock
+        is held for the duration. Mutating Bokeh models is safe in that
+        case since no other code can be touching them concurrently, but
+        raw socket writes are NOT (see `_on_loop_thread`).
+        """
+        session = getattr(getattr(self.curdoc, 'session_context', None), 'session', None)
+        session_lock = getattr(session, '_lock', None)
+        return bool(session_lock is not None and session_lock.locked())
+
+    def _install_thread_pool(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
+        """
+        Installs the shared bounded thread pool (configured via
+        ``config.nthreads`` / ``--num-threads``) as the default executor of
+        the server event loop. This ensures work Bokeh offloads with
+        ``asyncio.to_thread`` (locked callbacks and, for eligible apps,
+        Document initialization) is bounded by the same pool as Panel's own
+        ``state.execute(schedule='thread')`` rather than an unbounded one.
+        """
+        if self._thread_pool is None:
+            return
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+        loop.set_default_executor(self._thread_pool)
 
     @property
     def _extensions(self):
@@ -298,12 +397,13 @@ class _state(param.Parameterized):
 
         1. The Document to be modified is the same one that the server
            is currently processing.
-        2. We are on the same thread that the Document was created on.
+        2. We are running on the server event loop thread (writing to
+           Bokeh models and sockets is only safe there).
         3. The application has fully loaded and the Websocket is open.
         """
         return bool(
             doc is self.curdoc and
-            self._thread_id in (self._current_thread, None) and
+            (self._on_loop_thread or self._document_lock_held) and
             (not (doc and doc.session_context and getattr(doc.session_context, 'session', None))
              or self._connected.get(doc))
         )
@@ -375,7 +475,6 @@ class _state(param.Parameterized):
             self.param.trigger('session_info')
         doc = session_context._document
 
-        # Cleanup periodic callbacks
         if doc in self._periodic:
             for cb in self._periodic[doc]:
                 try:
@@ -384,21 +483,21 @@ class _state(param.Parameterized):
                     pass
             del self._periodic[doc]
 
-        # Cleanup Locations
         if doc in self._locations:
             loc = state._locations[doc]
             loc._server_destroy(session_context)
             del state._locations[doc]
 
-        # Cleanup Notifications
         if doc in self._notifications:
             notification = self._notifications[doc]
             notification._server_destroy(session_context)
             del state._notifications[doc]
 
-        # Clean up templates
         if doc in self._templates:
             del self._templates[doc]
+
+        if doc in self._stylesheets:
+            del self._stylesheets[doc]
 
     @property
     def _current_stack(self):
@@ -483,6 +582,32 @@ class _state(param.Parameterized):
                 self.param.trigger('_profiles')
         self._loaded[doc] = True
 
+    def _call_later(self, delay: float, callback: Callable[[], Awaitable[None]]) -> None:
+        """
+        Schedules a coroutine function on the server event loop after a
+        delay. Tornado IOLoops accept coroutine callbacks directly while
+        plain asyncio loops (which back the ASGI servers) do not, and may
+        be scheduled on from a worker thread.
+        """
+        loop = self._ioloop
+        if not isinstance(loop, asyncio.AbstractEventLoop):
+            loop.call_later(delay=delay, callback=callback)
+            return
+
+        def _run() -> None:
+            task = asyncio.ensure_future(callback())
+            _tasks.add(task)
+            task.add_done_callback(_tasks.discard)
+
+        try:
+            on_loop = asyncio.get_running_loop() is loop
+        except RuntimeError:
+            on_loop = False
+        if on_loop:
+            loop.call_later(delay, _run)
+        else:
+            loop.call_soon_threadsafe(loop.call_later, delay, _run)
+
     async def _scheduled_cb(self, name: str, threaded: bool = False) -> None:
         if name not in self._scheduled:
             return
@@ -499,7 +624,17 @@ class _state(param.Parameterized):
         if at is not None:
             now = dt.datetime.now().timestamp()
             call_time_seconds = (at - now)
-            self._ioloop.call_later(delay=call_time_seconds, callback=partial(self._scheduled_cb, name))
+            # _scheduled_cb always runs on the server event loop, so reschedule
+            # on the running loop rather than IOLoop.current(), which may point
+            # at a different/stale loop in multi-server (e.g. ASGI) contexts.
+            loop = asyncio.get_running_loop()
+
+            def _reschedule():
+                task = asyncio.ensure_future(self._scheduled_cb(name, threaded))
+                _tasks.add(task)
+                task.add_done_callback(_tasks.discard)
+
+            loop.call_later(call_time_seconds, _reschedule)
         try:
             self.execute(cb, schedule='thread' if threaded else 'auto')
         except Exception as e:
@@ -712,7 +847,7 @@ class _state(param.Parameterized):
 
     def execute(
         self,
-        callback: Callable[[], None | Coroutine[t.Any, t.Any, None]],
+        callback: Callable[[], None | Coroutine[t.Any, t.Any, t.Any]],
         schedule: bool | t.Literal['auto', 'thread'] = 'auto'
     ) -> None:
         """
@@ -773,11 +908,17 @@ class _state(param.Parameterized):
         for server_id in self._servers:
             if server_id in self._threads:
                 self._threads[server_id].stop()
-            else:
-                try:
-                    self._servers[server_id][0].stop()
-                except AssertionError:  # can't stop a server twice
-                    pass
+                continue
+            server = self._servers[server_id][0]
+            if hasattr(server, 'should_exit'):
+                # uvicorn.Server has no stop method, setting the exit flag is
+                # the only way to shut it down from the outside.
+                server.should_exit = True
+                continue
+            try:
+                server.stop()
+            except AssertionError:  # can't stop a server twice
+                pass
         self._servers.clear()
         self._threads.clear()
 
@@ -896,7 +1037,7 @@ class _state(param.Parameterized):
             self._busy_counter = []
         self._scheduled.clear()
         if self._thread_pool is not None:
-            self._thread_pool.shutdown(wait=False)
+            self._thread_pool.shutdown(wait=True, _shared=False)
             self._thread_pool = None
         self._sessions.clear()
         self._session_key_funcs.clear()
@@ -1021,9 +1162,7 @@ class _state(param.Parameterized):
         except StopIteration:
             return
         self._scheduled[key] = (diter, callback)
-        self._ioloop.call_later(
-            delay=call_time_seconds, callback=partial(self._scheduled_cb, key, threaded)
-        )
+        self._call_later(call_time_seconds, partial(self._scheduled_cb, key, threaded))
 
     def sync_busy(self, indicator: BooleanIndicator) -> None:
         """

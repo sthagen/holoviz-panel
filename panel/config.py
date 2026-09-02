@@ -15,7 +15,6 @@ import sys
 import typing as t
 import warnings
 
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from weakref import WeakKeyDictionary
 
@@ -157,6 +156,13 @@ class _config(_base_config):
     global_loading_spinner = param.Boolean(default=False, doc="""
         Whether to add a global loading spinner for the whole application.""")
 
+    lazy_resources = param.Boolean(default=True, doc="""
+        Whether components load the external libraries they need on demand
+        if they were not already declared with pn.extension. Disabling this
+        restores strict behavior, i.e. a component whose extension was not
+        declared fails loudly instead of fetching its resources at render
+        time, which is what an air-gapped deployment usually wants.""")
+
     layout_compatibility: t.Literal['warn', 'error'] = param.Selector(
         default='warn', objects=['warn', 'error'], doc="""
         Provide compatibility for older layout specifications. Incompatible
@@ -198,6 +204,11 @@ class _config(_base_config):
         Whether to enable automatic re-connect should the server connection
         be disrupted. Setting "prompt" will not enable automatic re-connect but
         will pop up a notification asking the user to confirm.""")  # type: ignore[assignment, ty:invalid-assignment]
+
+    resource_timeout = param.Integer(default=15000, bounds=(0, None), doc="""
+        Time in milliseconds a component waits for the external libraries
+        it lazily loads before it renders an error state instead. Set to 0
+        to wait indefinitely.""")
 
     reuse_sessions: t.Literal[True, False, 'warm'] = param.Selector(
         default=False, objects=[True, False, 'warm'], doc="""
@@ -397,15 +408,16 @@ class _config(_base_config):
 
     @param.depends('_nthreads', watch=True, on_init=True)
     def _set_thread_pool(self):
+        from .io.state import _SharedThreadPoolExecutor
         if self.nthreads is None:
             if state._thread_pool is not None:
-                state._thread_pool.shutdown(wait=False)
+                state._thread_pool.shutdown(wait=False, _shared=False)
             state._thread_pool = None
             return
         if state._thread_pool:
             raise RuntimeError("Thread pool already running")
         threads = self.nthreads if self.nthreads else None
-        state._thread_pool = ThreadPoolExecutor(max_workers=threads)
+        state._thread_pool = _SharedThreadPoolExecutor(max_workers=threads)
 
     @param.depends('notifications', watch=True)
     def _setup_notifications(self):

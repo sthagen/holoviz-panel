@@ -96,26 +96,6 @@ def test_normalize_app_path_prefix_boundary():
     assert _normalize_app_path('/pre/user/alice/ws', '/pre', suffix='/ws') == '/user/alice'
 
 
-def test_fastapi_route_context_prefix_boundary():
-    fastapi = pytest.importorskip("fastapi")
-    from panel.io.fastapi import _route_context
-
-    request = fastapi.Request({
-        'type': 'http',
-        'method': 'GET',
-        'scheme': 'http',
-        'path': '/prefix/user/alice',
-        'query_string': b'',
-        'headers': [],
-        'client': ('127.0.0.1', 5000),
-        'server': ('127.0.0.1', 8000),
-        'path_params': {'name': 'alice'},
-    })
-    route_params, app_path = _route_context(request, prefix='/pre')
-    assert route_params == {'name': 'alice'}
-    assert app_path == '/prefix/user/alice'
-
-
 @pytest.mark.xdist_group(name="server")
 def test_server_update(html_server_session):
     html, server, session, port = html_server_session
@@ -291,8 +271,8 @@ def test_server_template_static_resources(server_implementation):
         assert f.read() == r.content.decode('utf-8').replace('\r\n', '\n')
 
 
-#@pytest.mark.parametrize('server_implementation', ["tornado", "fastapi"], indirect=True)
-def test_server_template_static_resources_with_prefix():
+@pytest.mark.parametrize('server_implementation', ["tornado", "fastapi"], indirect=True)
+def test_server_template_static_resources_with_prefix(server_implementation):
     template = BootstrapTemplate()
 
     r = serve_and_request({'template': template}, prefix="/prefix", suffix="/prefix/static/extensions/panel/bundled/bootstraptemplate/bootstrap.css")
@@ -301,8 +281,8 @@ def test_server_template_static_resources_with_prefix():
         assert f.read() == r.content.decode('utf-8').replace('\r\n', '\n')
 
 
-#@pytest.mark.parametrize('server_implementation', ["tornado", "fastapi"], indirect=True)
-def test_server_template_static_resources_with_prefix_relative_url():
+@pytest.mark.parametrize('server_implementation', ["tornado", "fastapi"], indirect=True)
+def test_server_template_static_resources_with_prefix_relative_url(server_implementation):
     template = BootstrapTemplate()
 
     r = serve_and_request({'template': template}, prefix='/prefix', suffix="/prefix/template")
@@ -447,8 +427,8 @@ def test_server_on_session_created(server_implementation):
     assert len(session_contexts) == 3
 
 
-#@pytest.mark.parametrize('server_implementation', ["tornado", "fastapi"], indirect=True)
-def test_server_on_session_destroyed():
+@pytest.mark.parametrize('server_implementation', ["tornado", "fastapi"], indirect=True)
+def test_server_on_session_destroyed(server_implementation):
     session_contexts = []
     def append_session(session_context):
         session_contexts.append(session_context)
@@ -626,7 +606,9 @@ def test_server_schedule_at(server_implementation):
     # Check callback was executed within small margin of error
     wait_until(lambda: 'at' in state.cache)
     assert abs(state.cache['at'] - scheduled[0]) < dt.timedelta(seconds=0.2)
-    assert len(state._scheduled) == 0
+    # The one-shot task must clean itself up (other tasks such as the
+    # scheduled gc.collect may still be pending).
+    wait_until(lambda: 'periodic' not in {k.split('_', 1)[-1] for k in state._scheduled})
 
 
 def test_server_schedule_at_iterator(server_implementation):
@@ -653,7 +635,7 @@ def test_server_schedule_at_iterator(server_implementation):
     wait_until(lambda: len(state.cache['at']) == 2)
     assert abs(state.cache['at'][0] - scheduled[0]) < dt.timedelta(seconds=0.2)
     assert abs(state.cache['at'][1] - scheduled[1]) < dt.timedelta(seconds=0.2)
-    assert len(state._scheduled) == 0
+    wait_until(lambda: 'periodic' not in {k.split('_', 1)[-1] for k in state._scheduled})
 
 
 def test_server_schedule_at_callable(server_implementation):
@@ -683,7 +665,7 @@ def test_server_schedule_at_callable(server_implementation):
     converted = [s.replace(tzinfo=dt.timezone.utc).astimezone().replace(tzinfo=None) for s in scheduled]
     assert abs(state.cache['at'][0] - converted[0]) < dt.timedelta(seconds=0.2)
     assert abs(state.cache['at'][1] - converted[1]) < dt.timedelta(seconds=0.2)
-    assert len(state._scheduled) == 0
+    wait_until(lambda: 'periodic' not in {k.split('_', 1)[-1] for k in state._scheduled})
 
 
 @pytest.mark.xdist_group(name="server")
@@ -822,8 +804,6 @@ def test_server_route_context_size_is_capped(port, server_implementation):
 
 
 def test_server_route_params_autoload_js(port, server_implementation):
-    if server_implementation == 'fastapi':
-        pytest.skip("bokeh_fastapi does not expose an autoload.js endpoint.")
     route_params = []
     app_urls = []
 
@@ -850,17 +830,10 @@ def test_server_dynamic_ws_endpoint_resolution(port, server_implementation):
 
     serve_and_wait({'/user/{name}': app}, port=port)
     ws = requests.get(f"http://localhost:{port}/user/alice/ws")
-    if server_implementation == 'tornado':
-        assert ws.status_code == 400
-    else:
-        # FastAPI exposes websocket routes that are not accessible via HTTP GET.
-        assert ws.status_code == 404
+    assert ws.status_code == 400
 
 
 def test_server_dynamic_metadata_endpoint_resolution(port, server_implementation):
-    if server_implementation == 'fastapi':
-        pytest.skip("bokeh_fastapi does not expose a metadata endpoint.")
-
     def app():
         return 'route'
 
@@ -870,9 +843,6 @@ def test_server_dynamic_metadata_endpoint_resolution(port, server_implementation
 
 
 def test_server_dynamic_static_file_route(port, server_implementation):
-    if server_implementation == 'fastapi':
-        pytest.skip("bokeh_fastapi does not expose per-app static endpoints.")
-
     def app():
         return 'route'
 
@@ -890,10 +860,8 @@ def test_server_dynamic_routes_with_prefix_endpoint_access(port, server_implemen
     assert app_page.status_code == 200
     duplicate_prefix = requests.get(f"http://localhost:{port}/prefix/prefix/user/alice")
     assert duplicate_prefix.status_code == 404
-
-    if server_implementation == 'tornado':
-        metadata = requests.get(f"http://localhost:{port}/prefix/user/alice/metadata")
-        assert metadata.status_code == 200
+    metadata = requests.get(f"http://localhost:{port}/prefix/user/alice/metadata")
+    assert metadata.status_code == 200
 
 
 def test_fastapi_prefixed_route_registration_no_double_prefix():
@@ -906,24 +874,30 @@ def test_fastapi_prefixed_route_registration_no_double_prefix():
         return 'route'
 
     application = add_applications({'/user/{name}': panel_app}, app=app, prefix='/prefix')
-    paths = {route.path for route in application.app.router.routes if hasattr(route, "path")}
-    assert '/prefix/user/{name}' in paths
-    assert '/prefix/user/{name}/ws' in paths
-    assert '/prefix/prefix/user/{name}' not in paths
-    assert '/prefix/user/{name}/metadata' not in paths
-    assert '/prefix/user/{name}/autoload.js' not in paths
+
+    # The applications are served by the ASGI application, not registered as
+    # FastAPI routes, so the prefix must only be applied once when routing.
+    assert set(application.applications) == {'/user/{name}'}
+    asgi = application.asgi
+    resolved = asgi._resolve_route(asgi._route_path({'path': '/prefix/user/alice'}))
+    assert resolved is not None
+    assert resolved[1] == ''
+    assert resolved[2] == {'name': 'alice'}
+    assert asgi._resolve_route(asgi._route_path({'path': '/prefix/prefix/user/alice'})) is None
+    assert asgi._route_path({'path': '/user/alice'}) == ''
 
 
-def test_fastapi_synthetic_request_preserves_cookies(monkeypatch, port):
+@pytest.mark.parametrize('server_implementation', ["tornado", "fastapi"], indirect=True)
+def test_server_request_preserves_cookies(monkeypatch, port, server_implementation):
     seen_cookie_values = []
-    original_process_request = Application.process_request
+    original = Application._extra_request_data
 
-    def wrapped_process_request(self, request):
+    def wrapped(self, request):
         user_cookie = request.cookies.get('user')
         seen_cookie_values.append(None if user_cookie is None else user_cookie.value)
-        return original_process_request(self, request)
+        return original(self, request)
 
-    monkeypatch.setattr(Application, 'process_request', wrapped_process_request)
+    monkeypatch.setattr(Application, '_extra_request_data', wrapped)
 
     def app():
         return 'route'
@@ -1260,6 +1234,7 @@ def test_server_thread_pool_execute(server_implementation, threads):
 
 def test_server_thread_pool_defer_load(server_implementation, threads):
     counts = []
+    completed = []
 
     def cb(count=[0]):
         count[0] += 1
@@ -1267,6 +1242,7 @@ def test_server_thread_pool_defer_load(server_implementation, threads):
         time.sleep(0.5)
         value = counts[-1]
         count[0] -= 1
+        completed.append(1)
         return value
 
     def app():
@@ -1284,6 +1260,10 @@ def test_server_thread_pool_defer_load(server_implementation, threads):
 
     # Checks whether defer_load callback was executed concurrently
     wait_until(lambda: len(counts) > 0 and max(counts) > 1)
+    # Ensure both deferred callbacks have fully finished processing before the
+    # server and thread pool are torn down, otherwise in-flight work can try
+    # to schedule a callback on the session's event loop after it is closed.
+    wait_until(lambda: len(completed) == 2, timeout=10000)
 
 
 async def test_server_text_input_update_before_click_event(server_implementation):
@@ -1346,29 +1326,47 @@ def test_server_thread_pool_change_event(server_implementation, threads):
 def test_server_thread_pool_bokeh_event(server_implementation, threads):
     import pandas as pd
 
-    df = pd.DataFrame([[1, 1], [2, 2]], columns=['A', 'B'])
+    df = pd.DataFrame({'A': range(5), 'B': range(5)})
 
     tabulator = Tabulator(df)
 
     counts = []
+    completed = []
 
     def cb(event, count=[0]):
         count[0] += 1
         counts.append(count[0])
         time.sleep(0.5)
         count[0] -= 1
+        completed.append(1)
 
     tabulator.on_edit(cb)
 
     serve_and_request(tabulator)
 
-    model = list(tabulator._models.values())[0][0]
-    event = TableEditEvent(model, 'A', 0)
-    for _ in range(5):
-        tabulator._server_event(model.document, event)
+    ref, (model, _) = list(tabulator._models.items())[0]
+    doc = model.document
+    for row in range(5):
+        # on_edit only fires once the edit's value lands in tabulator.value,
+        # via the ColumnDataSource patch below - a distinct row is used per
+        # iteration so each is independently dispatched (and can overlap on
+        # the thread pool) rather than all firing from a single patch.
+        event = TableEditEvent(model, 'A', row, value=row + 10, old=row)
+        tabulator._server_event(doc, event)
+    wait_until(lambda: len(tabulator._pending_edits) == 5)
+
+    for row in range(5):
+        new_data = dict(model.source.data)
+        new_data['A'][row] = row + 10
+        tabulator._server_change(doc, ref, None, 'data', model.source.data, new_data)
+        wait_until(lambda row=row: ('A', row) not in tabulator._pending_edits)
 
     # Checks whether Tabulator on_edit callback was executed concurrently
     wait_until(lambda: len(counts) > 0 and max(counts) > 1)
+    # Ensure all dispatched events have fully finished processing before the
+    # server and thread pool are torn down, otherwise in-flight work can try
+    # to schedule a callback on the session's event loop after it is closed.
+    wait_until(lambda: len(completed) == 5, timeout=10000)
 
 
 def test_server_thread_pool_periodic(server_implementation, threads):
@@ -1392,6 +1390,47 @@ def test_server_thread_pool_periodic(server_implementation, threads):
 
     # Checks whether periodic callbacks were executed concurrently
     wait_until(lambda: len(counts) > 0 and max(counts) > 1)
+
+
+def test_server_thread_pool_is_loop_default_executor(threads):
+    """
+    With --num-threads set, the shared thread pool must be installed as the
+    server loop's default executor so Bokeh's asyncio.to_thread offloading is
+    bounded by the same pool.
+    """
+    executors = {}
+
+    def app():
+        loop = state.curdoc.session_context.server_context.application_context.io_loop
+        executors['default'] = loop.asyncio_loop._default_executor
+        return Button(label='Click')
+
+    serve_and_request(app)
+
+    wait_until(lambda: 'default' in executors)
+    assert executors['default'] is state._thread_pool
+
+
+def test_server_concurrent_session_init_isolated(threads):
+    """
+    Multiple sessions initializing concurrently on worker threads must each
+    observe their own curdoc, without cross-contamination from the shared
+    thread pool.
+    """
+    seen = []
+
+    def app():
+        doc = state.curdoc
+        # Hold in the init body so multiple sessions overlap on the pool.
+        time.sleep(0.2)
+        # curdoc must still be this session's document after the sleep.
+        seen.append(doc is state.curdoc and doc is not None)
+        return Button(label='Click')
+
+    serve_and_request(app, n=4)
+
+    wait_until(lambda: len(seen) == 4)
+    assert all(seen)
 
 
 def test_server_thread_pool_onload(threads):
