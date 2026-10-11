@@ -15,15 +15,15 @@ Panel will now let the user access all endpoints without being redirected to the
 ```python
 import panel as pn
 
-pn.extension(template='material')
+pn.extension(template='page')
 
 pn.state.template.title = 'Optional Auth'
 
 if pn.state.user == 'guest':
-    button = pn.widgets.Button(label='Login').servable(target='header')
+    button = pn.ui.Button(label='Login').servable(target='header')
     button.js_on_click(code='window.location.href="/login"')
 
-pn.Column(f'# Hello {pn.state.user}!', pn.state.user_info).servable()
+pn.ui.Column(f'# Hello {pn.state.user}!', pn.state.user_info).servable()
 ```
 
 Serving this app with `panel serve app.py ... --oauth-optional` and then visiting the `/app` endpoint will show the following:
@@ -42,11 +42,11 @@ def authorize(user_info, path):
         return '/login'
     return True
 
-pn.extension(authorize_callback=authorize, template='material')
+pn.extension(authorize_callback=authorize, template='page')
 
 pn.state.template.title = 'Admin'
 
-pn.Column(f'# Hello {pn.state.user}!', pn.state.user_info).servable()
+pn.ui.Column(f'# Hello {pn.state.user}!', pn.state.user_info).servable()
 ```
 
 ## Guest Endpoints

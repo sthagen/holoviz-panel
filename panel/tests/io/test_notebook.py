@@ -20,7 +20,7 @@ from panel.layout import Column
 from panel.models.echarts import ECharts
 from panel.models.perspective import Perspective
 from panel.models.tabulator import DataTabulator
-from panel.pane import Str
+from panel.pane import DataFrame, Str
 from panel.widgets import TextEditor
 
 from ..util import jb_available
@@ -112,6 +112,30 @@ def test_notebook_inline_css_stylesheets(nb_loaded):
     for stylesheet in model.stylesheets[:len(model.__css__)]:
         assert isinstance(stylesheet, InlineStyleSheet)
 
+def test_notebook_inline_css_stylesheets_kept_on_update(nb_loaded):
+    pd = pytest.importorskip('pandas')
+    pane = DataFrame(pd.DataFrame({'a': [1, 2]}))
+    with config.set(inline=True):
+        pane._repr_mimebundle_()
+    model = list(pane._models.values())[0][0]
+    stylesheets = list(model.stylesheets)
+    assert not any(isinstance(sts, ImportedStyleSheet) for sts in stylesheets)
+
+    pane.object = pd.DataFrame({'a': [3, 4]})
+
+    assert model.stylesheets == stylesheets
+
+def test_notebook_cdn_css_stylesheets_not_inlined_on_update(nb_loaded):
+    pd = pytest.importorskip('pandas')
+    pane = DataFrame(pd.DataFrame({'a': [1, 2]}))
+    with config.set(inline=False):
+        pane._repr_mimebundle_()
+    model = list(pane._models.values())[0][0]
+
+    pane.object = pd.DataFrame({'a': [3, 4]})
+
+    assert not any(isinstance(sts, InlineStyleSheet) for sts in model.stylesheets)
+
 
 def test_notebook_inline_resources_shadow_amd_globals(monkeypatch, notebook_bootstrap):
     """
@@ -178,6 +202,13 @@ def test_notebook_endpoint_alert_stays_in_notebook_output(monkeypatch, notebook_
     assert 'function fallback_to_cdn(element, url, attribute, parent)' in bootstrap
     assert 'element.dataset.panelCdnFallback != null' in bootstrap
     assert 'const CDN_DIST = "https://cdn.holoviz.org/panel/' in bootstrap
+    assert "root.Jupyter?.notebook != null || document.querySelector('.jp-LabShell') != null" in bootstrap
+    assert 'if (live_notebook) {' in bootstrap
+    assert 'if (!live_notebook) {' in bootstrap
+    assert 'element.src = resource_url(url)' in bootstrap
+    assert 'element.href = resource_url(url)' in bootstrap
+    assert 'new URL(resource_url(url), document.baseURI)' in bootstrap
+    assert 'require_config.paths[name] = Array.isArray(path) ? path.map(resource_url) : resource_url(path)' in bootstrap
 
 
 def test_notebook_vscode_resources_use_cdn(monkeypatch, notebook_bootstrap):

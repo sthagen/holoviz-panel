@@ -37,6 +37,7 @@ from markupsafe import Markup
 
 from ..config import config, panel_extension as extension
 from ..util import _descendents, isurl, url_path
+from .pages import page_theme
 from .state import state
 
 if t.TYPE_CHECKING:
@@ -91,6 +92,9 @@ _env.lstrip_blocks = True
 _env.filters['json'] = lambda obj: Markup(json.dumps(obj, cls=json_dumps))
 _env.filters['conffilter'] = conffilter
 _env.filters['sorted'] = sorted
+# A global so that user supplied auth, logout and error templates can use the
+# page theme without every handler passing it.
+_env.globals['page'] = page_theme
 
 @functools.cache
 def parse_template(*args, **kwargs):
@@ -945,12 +949,8 @@ class Resources(BkResources):
 
         # Add loading spinner
         if config.global_loading_spinner:
-            loading_base = (DIST_DIR / "css" / "loading.css").read_text(encoding='utf-8').replace(
-                '../assets', self.dist_dir + 'assets'
-            )
-            raw.extend([loading_base, loading_css(
-                config.loading_spinner, config.loading_color, config.loading_max_height
-            )])
+            from .loading import loading_resources
+            raw.extend(loading_resources(inline=True, dist_path=self.dist_dir)['raw_css'])
         return raw + process_raw_css(config.raw_css) + process_raw_css(config.global_css)
 
     @property
